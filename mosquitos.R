@@ -28,6 +28,13 @@ library(viridis)
 library(foreach)
 library(doParallel)
 library(rmapshaper)
+library(ncdf4)
+library(daymetr)
+library(gdalUtils)
+library(rgdal)
+library(exactextractr)
+library(foreach)
+library(doParallel)
 
 source("https://raw.githubusercontent.com/frousseu/FRutils/master/R/colo.scale.R")
 source("https://raw.githubusercontent.com/frousseu/UdeS/master/GStecher/newdata.R")
@@ -74,33 +81,307 @@ inla.mesh2sp <- function(mesh) {
   )
   vertices <- SpatialPoints(mesh$loc[, 1:2, drop = FALSE], proj4string = crs)
   list(triangles = triangles, vertices = vertices)
-}
-
-d<-as.data.frame(read_excel("C:/Users/God/Documents/UdeS/Documents/UdeS/Consultation/JAllostry/Doc/BD.xlsx"))
-d$Long<-d$LongdecSatScan
-d$Lat<-d$LatdecSatScan
-d$Long<-d$Long+0.3
-d$Lat<-d$Lat-0.2
-d$Site<-ifelse(nchar(d$Site)==6,sapply(strsplit(d$Site,"(?<=.{3})", perl = TRUE),paste,collapse=" "),d$Site)
-#unique(d$Site)
-
-d$date<-as.Date(d$Day)
-d$year<-d$Annee
-d$jul<-as.integer(format(d$date,"%j"))
-
-
-d<-d[order(d$Site,d$Annee_Week),]
-
-l<-split(d,d$year)
-
-ds<-d
-coordinates(ds)<-~Long+Lat
-proj4string(ds)<-"+init=epsg:4326"
+  }
 
 prj<-"+proj=utm +zone=18 +datum=WGS84 +units=km +no_defs +ellps=WGS84 +towgs84=0,0,0"
+can<-raster::getData("GADM", country = "CAN", level = 2)
+que<-can[can$NAME_1=="Québec",]
+Q<-as(ms_simplify(st_as_sf(spTransform(que,CRS(prj))),keep=0.03),"Spatial")
+
+
+################
+### new data ###
+
+# can we assume there is a single sample per trap id per date?
+# do we have trap nights when counts were 0 ???
+
+### GDG
+gdg<-as.data.frame(read_excel("C:/Users/God/Documents/UdeS/Documents/UdeS/Consultation/JAllostry/Doc/GDG_INSPQ/GDG.xls",sheet="Total"))
+ngdg<-names(gdg)
+
+gdg$id<-gdg$SiteP
+gdg$lon<-gdg$Longitude
+gdg$lat<-gdg$Latitude
+gdg$date<-gdg$Collection_date
+gdg$nights<-gdg$NbNuitOp_Calc
+gdg$code<-gdg$Species
+gdg$species<-gdg$Taxa_Name
+gdg$count<-gdg$Total_MS
+gdg$type<-gdg$Typ
+gdg$method<-gdg$MethP
+
+gdg<-gdg[,setdiff(names(gdg),ngdg)]
+
+### INSPQ
+# A single trap id can have multiple method...
+# What is H and E dates?
+# What are the different coordinates?
+# Is this the total count taking into account the subsampling?
+inspq<-as.data.frame(read_excel("C:/Users/God/Documents/UdeS/Documents/UdeS/Consultation/JAllostry/Doc/GDG_INSPQ/INSPQ.xlsx",sheet="Sheet1"))
+ninspq<-names(inspq)
+
+inspq$id<-inspq$Pools_Entomo__Site
+inspq$lon<-inspq$Stations_Entomo__Longdec
+inspq$lat<-inspq$Stations_Entomo__Latdec
+inspq$method<-inspq$Pools_Entomo__MethP
+inspq$species<-inspq$Pools_Entomo__TaxaName
+#inspq$group<-inspq$Pools_Entomo__TaxaGrp3
+inspq$code<-inspq[,7]
+inspq$count<-inspq$Pools_Entomo__NbMS
+inspq$type<-inspq$Pools_Entomo__Typ
+inspq$date<-inspq$Echantillons_Entomo__ColDate
+#inspq$beg<-inspq$Echantillons_Entomo__ColHStart
+#inspq$end<-inspq$Echantillons_Entomo__ColHEnd
+inspq$nights<-inspq$Information_Supp_Entomo__NB_Nuits_Operation
+#inspq$year<-as.integer(substr(inspq$date,1,4))
+inspq<-inspq[,setdiff(names(inspq),ninspq)]
+
+nrow(unique(inspq[,c("id","lon","lat")]))
+ids<-unique(inspq[,c("id","lon","lat")])
+dids<-ids$id[duplicated(ids$id)] # ids changing coordinates
+dids
+table(as.Date(inspq$end)-as.Date(inspq$beg))
+
+setdiff(names(gdg),names(inspq))
+setdiff(names(inspq),names(gdg))
+
+d<-as.data.table(rbind(gdg,inspq[,names(gdg)]))
+d$species<-gsub("à","a",gsub("é","e",gsub("/| |-","_",gsub("\\.","",d$species))))
+d[,c("code","group","type"):=NULL] # not sure what type means or if it is useful
+d<-dcast(d,...~species,value.var="count",fill=0,fun=sum) # need to understand and remove the fun here, should expect a single value
+setorder(d,id,date,method)
+table(duplicated(d[,c("id","lon","lat","date","method")]))
+d<-d[d$method%in%c("LT"),] # keeps only LTs
+d[,c("NA"):=NULL] # removes NA column
+notspecies<-c("id","lon","lat","date","nights","method")
+species<-setdiff(names(d),notspecies)
+total<-colSums(d[,..species])
+species<-species[rev(order(total))]
+d<-d[,c(notspecies,species),with=FALSE]
+rev(sort(total))
+
+#d<-as.data.frame(read_excel("C:/Users/God/Documents/UdeS/Documents/UdeS/Consultation/JAllostry/Doc/BD.xlsx"))
+#d$Long<-d$LongdecSatScan
+#d$Lat<-d$LatdecSatScan
+#d$Long<-d$Long+0.3
+#d$Lat<-d$Lat-0.2
+#d$Site<-ifelse(nchar(d$Site)==6,sapply(strsplit(d$Site,"(?<=.{3})", perl = TRUE),paste,collapse=" "),d$Site)
+#unique(d$Site)
+
+#d$date<-as.Date(d$Day)
+#d$date<-as.Date(paste0(d$Annee,"-01-01"))+d$Week*7
+d$jul<-as.integer(format(d$date,"%j"))
+d$date<-as.character(d$date)
+d$year<-substr(d$date,1,4)
+d<-d[!is.na(d$year),] # removes what does not have a year
+d$week<-format(as.Date(d$date),"%Y-W%V")
+d$year_week<-paste(d$year,d$week,sep="_")
+
+d<-d[order(d$id,d$year_week),]
+unique(d[,c("id","lon","lat","year")])[,lapply(.SD,length),by=year,.SDcols="id"][order(year),]
+d[,lapply(.SD,sum),by=year,.SDcols=species][order(year),1:7]
+#Encoding(species)<-"UTF-8"
+#Encoding(names(d))<-"UTF-8"
+
+l<-split(d,d$year)
+ds<-d
+coordinates(ds)<-~lon+lat
+ds$longitude<-d$lon
+ds$latitude<-d$lat
+proj4string(ds)<-"+init=epsg:4326"
 ds<-spTransform(ds,CRS(prj))
+#ds<-ds[ds$Annee%in%c(2014:2016),][1:500,]
+
+l<-split(ds,ds$year)
+par(mfrow=n2mfrow(length(l)),mar=c(0.25,0.25,0.25,0.25))
+lapply(l,function(i){
+  x<-i[!duplicated(i$longitude),]
+  print(nrow(x))
+  plot(x,col="white")
+  plot(Q,add=TRUE,col="grey90",border="white")
+  plot(x,add=TRUE,pch=16,cex=0.75,col=gray(0,0.9))
+  mtext(i$year[1],side=3,adj=c(0,0),line=-1.25)
+})
+
+
+
+################
+### old data ###
+
+#d<-as.data.frame(read_excel("C:/Users/God/Documents/UdeS/Documents/UdeS/Consultation/JAllostry/Doc/BD.xlsx"))
+#d$Long<-d$LongdecSatScan
+#d$Lat<-d$LatdecSatScan
+#d$Long<-d$Long+0.3
+#d$Lat<-d$Lat-0.2
+#d$Site<-ifelse(nchar(d$Site)==6,sapply(strsplit(d$Site,"(?<=.{3})", perl = TRUE),paste,collapse=" "),d$Site)
+#unique(d$Site)
+
+#d$date<-as.Date(d$Day)
+#d$date<-as.Date(paste0(d$Annee,"-01-01"))+d$Week*7
+#d$jul<-as.integer(format(d$date,"%j"))
+#d$date<-as.character(d$date)
+#d$year<-d$Annee
+
+#d<-d[order(d$Site,d$Annee_Week),]
+
+#l<-split(d,d$year)
+
+#ds<-d
+#coordinates(ds)<-~Long+Lat
+#proj4string(ds)<-"+init=epsg:4326"
+
+#prj<-"+proj=utm +zone=18 +datum=WGS84 +units=km +no_defs +ellps=WGS84 +towgs84=0,0,0"
+#ds<-spTransform(ds,CRS(prj))
+#ds<-ds[ds$Annee%in%c(2014:2016),][1:500,]
 
 #mapview(ds,zcol="Site")
+
+##############################
+### epiweeks #################
+
+### temp stuff
+
+##############################
+### weather ##################
+
+#rasterOptions(chunksize=1e+09,maxmemory=5e+10)
+
+#download_daymet_tiles(#location = c(46.75,-77.5,45,-70),
+#  location = st_bbox(st_transform(st_as_sf(ds),crs=4326))[c(4,1,2,3)],
+#  start = 2003,
+#  end = 2016,
+#  param = "tmax",
+#  path = "C:/Users/God/Downloads/daymet")
+
+### faster to stack rasters, summarize them to weekly values and then merge them, not merge and then summarize
+
+l<-list.files("C:/Users/God/Downloads/daymet",full=TRUE,pattern="_2015_")
+g<-lapply(l,function(i){
+  r<-stack(i)[[1]]
+  r<-setValues(r,ifelse(is.na(values(r)),NA,as.integer(gsub(".nc","",tail(strsplit(i,"_")[[1]],1)))))
+  r
+})
+bb<-lapply(g,function(i){
+  st_as_sfc(st_bbox(i))
+})
+g<-Reduce(merge,g)
+
+plot(g[[1]])
+invisible(lapply(bb,plot,add=TRUE))
+
+dss<-st_transform(st_as_sf(ds),crs=st_crs(g[[1]]))
+e<-extract(g,dss)
+dss$tile<-e
+dss$year_tile<-paste(dss$year,dss$tile,sep="_")
+
+lf<-list.files("C:/Users/God/Downloads/daymet",full=TRUE)
+lf<-lf[order(lf)]
+ids<-do.call("rbind",strsplit(lf,"_"))
+o<-order(ids[,3],ids[,2])
+ids<-ids[o,]
+lf<-lf[o]
+lf<-split(lf,paste(ids[,2],gsub(".nc","",ids[,3]),sep="_"))
+lf<-lapply(lf,stack)
+
+registerDoParallel(detectCores()-4) 
+getDoParWorkers()
+
+ptemps<-c(1,15,90) # number of days over which to average weather values
+
+#l<-lapply(seq_along(lf)[1:5],function(i){
+l<-foreach(i=seq_along(lf),.packages=c("raster","sf")) %do% {  
+  w<-which(dss$year_tile==names(lf)[i])
+  #print(i)
+  if(any(w)){
+    e<-extract(lf[[i]],dss[w,])  
+    ll<-lapply(seq_along(w),function(j){
+      m<-match(dss$date[w[j]],gsub("\\.","-",gsub("X","",dimnames(e)[[2]])))
+      a<-sapply(ptemps,function(k){
+        mean(e[j,(m-k):m])
+      })
+      a
+    })
+    ll<-do.call("rbind",ll)  
+    #plot(lf[[i]][[1]])
+    #plot(st_geometry(dss[w,]),add=TRUE)
+    dimnames(ll)[[1]]<-w
+    ll
+  }
+}
+
+vals<-do.call("rbind",l)
+vals<-vals[order(as.integer(dimnames(vals)[[1]])),]
+vals<-as.data.frame(vals)
+names(vals)<-paste0("tmax",ptemps)
+ds<-cbind(ds,vals)
+
+
+#e<-exact_extract(weather,buff)
+#temp<-sapply(e,function(i){
+#  w<-sample(1:(ncol(i)-1),1)
+#  sum(i[,w]*i[,"coverage_fraction"])/sum(i[,"coverage_fraction"])
+#})
+
+#x<-1:5
+#p<-c(0.99,0.99,0.005,0.005,0.005)
+#sum(x*p)/sum(p)
+
+##############################
+### landcover ################
+
+l<-list.files("C:/Users/God/Documents/mosquitos/data/LULC/LULC/",pattern=".tif",full.names=TRUE)
+l<-l[substr(l,nchar(l)-3,nchar(l))==".tif"]
+
+r<-stack(l)
+NAvalue(r)<-0
+dss<-st_buffer(st_as_sf(spTransform(ds,CRS(proj4string(r)))),1000)
+e<-exact_extract(r,dss)
+l<-lapply(seq_along(e),function(i){
+  cov<-cbind(classn=e[[i]][,"LULC2011"],area=e[[i]][,"coverage_fraction"]*res(r)[1]*res(r)[2])
+  a<-aggregate(area~classn,data=cov,FUN=sum)
+  a$area<-a$area/sum(a$area)
+  a$loc<-i
+  cat("\r",paste(i,length(e),sep=" / "))
+  a
+})
+l<-do.call("rbind",l)
+ld<-setDT(l)
+pcov<-dcast(ld,loc~classn,value.var="area",fill=0)
+rowSums(pcov[,-1])
+
+lccnames<-as.data.frame(read_excel("C:/Users/God/Documents/mosquitos/data/0_ListeReclassification.xlsx",sheet="Reclassification",range="C52:D64"))
+names(lccnames)<-c("classn","orig")
+lccnames<-cbind(lccnames,class=c("clouds","water","barren","urban","wet","pond","marsh","swamp","crop","pasture","shrub","forest"))
+names(pcov)[-1]<-lccnames$class[match(names(pcov)[-1],lccnames$classn)]
+
+ds<-cbind(ds,pcov[,-1])
+ds$wetland<-ds$wet+ds$swamp+ds$marsh+ds$pond
+ds$agriculture<-ds$crop+ds$pasture
+ds$natural<-ds$shrub+ds$forest
+
+
+
+rlcc<-ratify(r[[1]])
+rat<-levels(rlcc)[[1]]
+rat$class<- c("void",lccnames$class)
+rat$code <- c(0,lccnames$classn)
+levels(rlcc) <- rat
+levels(s$cover)
+hn<-levels(rlcc)[[1]][,1]
+cols<-c("lightgoldenrod","skyblue","grey30","forestgreen","grey60","brown")
+cols<-c("white","gray","skyblue","grey20","grey50","brown","skyblue","brown","brown","lightgoldenrod","lightgoldenrod","green","forestgreen")
+#cols<-sample(colors(),length(hn))
+par(mar=c(0,0,0,0))
+plot(rlcc,legend=FALSE,col=cols)
+legend("bottomright",legend=levels(s$cover),fill=cols,bty="n",border=NA,cex=2)
+points(ds,col="red",pch=16,cex=0.8)
+dbuffer<-1
+buffer<-st_transform(st_buffer(st_as_sf(ds),dist=dbuffer),4326)
+plot(st_geometry(buffer),add=TRUE)
+
+
+
+### lcc2000 ############################
 
 l<-list.files("C:/Users/God/Documents/UdeS/Documents/UdeS/Consultation/JAllostry/Doc/lcc2000",pattern=".shp",full.names=TRUE)
 s<-lapply(l,st_read)
@@ -181,10 +462,7 @@ plot(pr,col=rev(viridis(100)))
 #  tm_dots() +
 #  tm_layout(basemaps = c("Esri.WorldImagery", "Esri.WorldShadedRelief", "Esri.NatGeoWorldMap"))
 
-can<-raster::getData("GADM", country = "CAN", level = 2)
-que<-can[can$NAME_1=="Québec",]
 
-Q<-as(ms_simplify(st_as_sf(spTransform(que,CRS(proj4string(ds)))),keep=0.03),"Spatial")
 
 plot(ds)
 plot(Q,add=TRUE)
@@ -311,7 +589,7 @@ h.spec <- list(#theta=list(prior='pc.prec', param=c(0.00000000001, 0.00000000005
 formulae <- y ~ -1 + intercept + week + week2 + natural + f(i, model=spde, group=i.group,control.group=list(model='ar1', hyper=h.spec)) 
 #formulae <- y ~ 0 + w + f(i, model=spde) + f(week,model="rw1")
 #formulae <- y ~ 0 + w + f(i, model=spde, group=i.group,control.group=list(model='exchangeable')) 
-prec.prior <- list(prior='pc.prec', param=c(1, 0.05))
+prec.prior <- list(prior='pc.prec', param=c(1, 0.05)) 
 m <- inla(formulae,  data=inla.stack.data(sdat), 
           control.predictor=list(compute=TRUE, A=inla.stack.A(sdat),link=1), 
           #control.family=list(hyper=list(theta=prec.prior)), 
@@ -407,7 +685,7 @@ axis(1,at=xx,label=20:40)
 
 plot(st_geometry(st_transform(st_as_sf(inla.mesh2sp(mesh)$triangles),4326)))
 
-pr<-raster(ext=extent(a),res=c(2,2),crs=CRS(proj4string(a)))
+pr<-raster(ext=extent(a),res=c(60,60),crs=CRS(proj4string(a)))
 g<-st_buffer(st_as_sf(xyFromCell(pr,1:ncell(pr),spatial=TRUE)),dist=1)
 
 plot(mesh,asp=1)
@@ -429,13 +707,14 @@ ll<-lapply(pgrid,function(i){
 })
 rgrid<-stack(ll)
 
-
+plot(rlcc)
+plot(st_transform(g,4326),add=TRUE)
 
 
 ###################################################################
 ### build prediction matrices for the map and the prediction graphs
 weeks<-unique(as.integer(factor(xs$Week)))
-Ap<-inla.spde.make.A(mesh=mesh,loc=coordinates(rgrid)[rep(1:ncell(rgrid),length(weeks)),][1,,drop=FALSE],group=rep(weeks,each=ncell(rgrid))[1])
+Ap<-inla.spde.make.A(mesh=mesh,loc=coordinates(rgrid)[rep(1:ncell(rgrid),length(weeks)),],group=rep(weeks,each=ncell(rgrid)))
 n<-5 # number of divisions in generated values for the focus variable
 Apn<-inla.spde.make.A(mesh=mesh,loc=matrix(c(600,5050),ncol=2)[rep(1,n),,drop=FALSE],group=rep(12,n))
 
@@ -451,7 +730,8 @@ if(length(v2)){
   lp<-lapply(lp,function(i){
     a<-as.data.frame(lapply(i[,gsub("2","",v2),drop=FALSE],"^",2))
     names(a)<-v2
-    cbind(i,a)
+    res<-cbind(i,a)
+    res[,order(names(res))]
   })
 }
 model<-formula(paste("y~-1+",paste(v,collapse="+")))
@@ -459,17 +739,21 @@ model<-formula(paste("y~-1+",paste(v,collapse="+")))
 #lpmed<-mmatrix(model,newdata(x=xs[,v,drop=FALSE],v=v,n=1,fun=median,list=FALSE)[[1]][rep(1,length(g)),])[[1]]
 vmap<-data.frame(week=sort(unique(xs$week)))
 vmap$week2<-vmap$week^2
-vmap<-vmap[rep(1:length(weeks),each=ncell(rgrid)),][1,]
+vmap<-vmap[rep(1:length(weeks),each=ncell(rgrid)),]
+vmap<-cbind(vmap,pgrid[rep(1:nrow(pgrid),length.out=nrow(vmap)),])
 
-vpred<-data.frame(week=seq(20,40,length.out=n))
-vpred$week2<-vpred$week^2
+#vpred<-data.frame(week=seq(20,40,length.out=n))
+#me<-newdata(x=xs@data[,v1,drop=FALSE],v=names(vpred)[1],n=1,fun=median,list=FALSE)[[1]]
+#me<-me[,!names(me)%in%names(vpred),drop=FALSE]
+#vpred<-cbind(vpred,me)
 
 ########################################################
 ### bind the data stack for the estimate and for the map
 stack.est<-inla.stack(data=list(y=xs$sp),A=list(A,1),effects=list(c(iset,list(intercept=1)),data.frame(xs@data[,v])),tag="est")
-stack.map<-inla.stack(data=list(y=NA),A=list(Ap,1),effects=list(c(lapply(iset,"[",1),list(intercept=1)),vmap),tag="map")
-stack.pred<-inla.stack(data=list(y=NA),A=list(Apn,1),effects=list(c(lapply(iset,"[",iset$i.group==12),list(intercept=1)),vpred),tag="pred")
-full.stack<-inla.stack(stack.est,stack.map,stack.pred)
+stack.map<-inla.stack(data=list(y=NA),A=list(Ap,1),effects=list(c(iset,list(intercept=1)),vmap),tag="map")
+#stack.pred<-inla.stack(data=list(y=NA),A=list(Apn,1),effects=list(c(lapply(iset,"[",iset$i.group==12),list(intercept=1)),vpred),tag="pred")
+#full.stack<-inla.stack(stack.est,stack.map,stack.pred)
+full.stack<-inla.stack(stack.est,stack.map)
 #full.stack<-inla.stack(stack.est,stack.pred)
 
 #######################################
@@ -586,7 +870,7 @@ plot(swediv,add=TRUE,border=gray(0,0.25),lwd=0.01)
 
 ### this section is not that useful because it is a prediction for a given location, hence it includes uncertainty in the spatial field
 
-par(mfrow=c(round(sqrt(length(v)),0),ceiling(sqrt(length(v)))),mar=c(4,4,3,3),oma=c(0,10,0,0))
+par(mfrow=c(round(sqrt(length(v1)),0),ceiling(sqrt(length(v1)))),mar=c(4,4,3,3),oma=c(0,10,0,0))
 for(i in seq_along(v1)){
   p<-m$summary.fitted.values[index[[v1[i]]],c("0.025quant","0.5quant","0.975quant")]
   #p[]<-lapply(p,transI)
@@ -603,7 +887,7 @@ for(i in seq_along(v1)){
   }
   axis(2,las=2)
 }
-mtext("Fire size in ha",outer=TRUE,cex=1.2,side=2,xpd=TRUE,line=2)
+mtext("Weekly number of mosquitos",outer=TRUE,cex=1.2,side=2,xpd=TRUE,line=2)
 
 
 ##########################################################
