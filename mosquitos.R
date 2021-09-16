@@ -333,7 +333,7 @@ l<-list.files("C:/Users/God/Documents/mosquitos/data/LULC/LULC/",pattern=".tif",
 l<-l[substr(l,nchar(l)-3,nchar(l))==".tif"]
 
 r<-stack(l)
-NAvalue(r)<-0
+#NAvalue(r)<-0
 dss<-st_buffer(st_as_sf(spTransform(ds,CRS(proj4string(r)))),1000)
 e<-exact_extract(r,dss)
 l<-lapply(seq_along(e),function(i){
@@ -360,19 +360,49 @@ ds$agriculture<-ds$crop+ds$pasture
 ds$natural<-ds$shrub+ds$forest
 
 
+xlim<-c(550000,650000)
+ylim<-c(5010000,5080000)
 
-rlcc<-ratify(r[[1]])
+rlcc<-ratify(r)
+
+#arg <- list(at=rat$ID, labels=rat$class)
+plot(r[[1]],col=cols,breaks=c(0,lccnames$classn),axis.args=arg,xlim=xlim,ylim=ylim,zlim=c(0,220),legend=FALSE,legend.width=1,legend.shrink=1.25,axes=TRUE)
+legend(x=par("usr")[2],y=par("usr")[4],legend=paste(lccnames$class,lccnames$classn),fill=cols,bty="n",border=NA,cex=1.2,xpd=TRUE)
+plot(st_geometry(st_buffer(st_transform(st_as_sf(ds),proj4string(r)),1000)),add=TRUE)
+#loc<-locator()
+#plot(r[[1]],col=cols,breaks=c(0,lccnames$classn),axis.args=arg,xlim=range(loc$x),ylim=range(loc$y),zlim=c(0,220),legend=FALSE,legend.width=1,legend.shrink=1.25,axes=TRUE)
+#plot(st_geometry(st_buffer(st_transform(st_as_sf(ds),proj4string(r)),1000)),add=TRUE)
+#legend(x=par("usr")[2],y=par("usr")[4],legend=paste(lccnames$class,lccnames$classn),fill=cols,bty="n",border=NA,cex=1.2,xpd=TRUE)
+
+plot(st_geometry(st_buffer(st_transform(st_as_sf(ds),proj4string(r)),1000)),add=TRUE)
+
+r2<-r
+r2<-crop(r2,c(range(loc$x),range(loc$y))[c(1,2,3,4)])
+plot(r2[[1]],col=rat$cols,breaks=c(rat$ID,210), axis.args=arg,zlim=c(0,210),legend.width=1,legend.shrink=1)
+
+
+
+rr<-raster(ext=extent(c(0,1,0,1)),res=0.1)
+rr<-setValues(rr,sample(c(1:5,40.5),ncell(rr),replace=TRUE))
+colss<-c("red","blue","green","orange","gray","cyan","darkred","dodgerblue")
+args <- list(at=1:5, labels=1:5)
+plot(rr,zlim=c(0,8),col=colss,breaks=c(0,1,2,3,4,5,6,7,8),axis.args=args)
+
+
 rat<-levels(rlcc)[[1]]
-rat$class<- c("void",lccnames$class)
+rat$class<- c("NA",lccnames$class)
 rat$code <- c(0,lccnames$classn)
+cols<-c("gray","skyblue","grey20","grey50","brown","skyblue","brown","brown","lightgoldenrod","lightgoldenrod","green","forestgreen")
+rat$cols<-cols
 levels(rlcc) <- rat
 levels(s$cover)
 hn<-levels(rlcc)[[1]][,1]
 cols<-c("lightgoldenrod","skyblue","grey30","forestgreen","grey60","brown")
-cols<-c("white","gray","skyblue","grey20","grey50","brown","skyblue","brown","brown","lightgoldenrod","lightgoldenrod","green","forestgreen")
+
 #cols<-sample(colors(),length(hn))
-par(mar=c(0,0,0,0))
-plot(rlcc,legend=FALSE,col=cols)
+par(mfrow=c(1,1),mar=c(0,0,0,0))
+plot(rlcc,legend=FALSE,col=cols[order(as.character(rat$code))])
+levelplot(r,col.regions=cols,xlim=c(500000,700000),ylim=c(5000000,5150000))
 legend("bottomright",legend=levels(s$cover),fill=cols,bty="n",border=NA,cex=2)
 points(ds,col="red",pch=16,cex=0.8)
 dbuffer<-1
@@ -963,6 +993,29 @@ plot(inla.tmarginal(sqrt, res$marginals.variance.nominal[[1]]),
 par(mfrow=c(1,1))
 
 
+#####################################################################
+### Check structure (~variogram) in traps in relation to distance 
 
+# to determine if there is a microhabitat/trap placement effect
 
+l<-split(dss,dss$date)
+l<-lapply(seq_along(l),function(i){
+  print(i)
+  x<-l[[i]]
+  s<-st_distance(st_centroid(x))
+  e<-expand.grid(trap1=1:nrow(s),trap2=1:nrow(s))
+  sp<-"Aedes_vexans"#Culex_pipiens_restuans_gr"#"Coquillettidia_perturbans"#"Aedes_vexans"
+  e$diff<-abs(x[[sp]][e[,"trap1"]]-x[[sp]][e[,"trap2"]])
+  e$dist<-sapply(1:nrow(e),function(j){s[e[j,"trap1"],e[j,"trap2"]]})
+  e
+})
+
+x<-rbindlist(l)
+x<-x[x$trap1!=x$trap2,]
+blocks<-50
+x$cut<-cut(x$dist,breaks=seq(-0.01,max(x$dist)+blocks,by=blocks))
+xx<-x[,.(n=.N,mean=mean(diff)),by="cut"][order(cut)][1:(5000/blocks),]
+xx<-droplevels(xx)
+plot(as.integer(xx$cut)+0.5,xx$mean,xaxt="n",type="b",cex=scales::rescale(xx$n,to=c(0.1,5)))
+axis(1,at=1:nlevels(xx$cut),label=as.integer(sapply(strsplit(gsub("\\(|\\]","",levels(xx$cut)),","),"[",1)),las=2,cex.axis=0.5)
 
