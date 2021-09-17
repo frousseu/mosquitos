@@ -204,6 +204,27 @@ lapply(l,function(i){
 })
 
 
+plot(ds)
+plot(Q,add=TRUE)
+#l<-locator()
+l<-list(x = c(537.794779946664, 537.794779946664, 558.632058968996, 
+           596.566592573754, 638.77543982412, 653.201248378042, 666.558478520563, 
+           671.901370577571, 665.489900109161, 647.324067115333, 629.158234121505, 
+           579.469337991328, 558.097769763295), y = c(5063.9912118604, 5036.20817316396, 
+                                                      4999.8765071763, 4999.8765071763, 5003.08224241051, 5013.23373731882, 
+                                                      5029.26241348985, 5049.03111410078, 5067.19694709461, 5083.22562326563, 
+                                                      5088.56851532264, 5081.62275564853, 5079.48559882573))
+h<-gConvexHull(SpatialPoints(cbind(l$x,l$y),proj4string=CRS(proj4string(ds))))
+plot(h,add=TRUE)
+o<-over(ds,h)
+d<-d[!is.na(o),]
+ds<-ds[!is.na(o),]
+
+mappingzone<-concaveman(coordinates(ds),2)
+mappingzone<-gBuffer(spPolygons(mappingzone,crs=CRS(proj4string(ds))),width=5)
+plot(mappingzone)
+plot(Q,add=TRUE,border="grey80")
+plot(ds,add=TRUE,pch=1)
 
 ################
 ### old data ###
@@ -269,10 +290,10 @@ g<-Reduce(merge,g)
 plot(g[[1]])
 invisible(lapply(bb,plot,add=TRUE))
 
-dss<-st_transform(st_as_sf(ds),crs=st_crs(g[[1]]))
-e<-extract(g,dss)
-dss$tile<-e
-dss$year_tile<-paste(dss$year,dss$tile,sep="_")
+dsbuffer<-st_transform(st_as_sf(ds),crs=st_crs(g[[1]]))
+e<-extract(g,dsbuffer)
+dsbuffer$tile<-e
+dsbuffer$year_tile<-paste(dsbuffer$year,dsbuffer$tile,sep="_")
 
 lf<-list.files("C:/Users/God/Downloads/daymet",full=TRUE)
 lf<-lf[order(lf)]
@@ -290,12 +311,11 @@ ptemps<-c(1,15,90) # number of days over which to average weather values
 
 #l<-lapply(seq_along(lf)[1:5],function(i){
 l<-foreach(i=seq_along(lf),.packages=c("raster","sf")) %do% {  
-  w<-which(dss$year_tile==names(lf)[i])
-  #print(i)
+  w<-which(dsbuffer$year_tile==names(lf)[i])
   if(any(w)){
-    e<-extract(lf[[i]],dss[w,])  
+    e<-extract(lf[[i]],dsbuffer[w,])  
     ll<-lapply(seq_along(w),function(j){
-      m<-match(dss$date[w[j]],gsub("\\.","-",gsub("X","",dimnames(e)[[2]])))
+      m<-match(dsbuffer$date[w[j]],gsub("\\.","-",gsub("X","",dimnames(e)[[2]])))
       a<-sapply(ptemps,function(k){
         mean(e[j,(m-k):m])
       })
@@ -303,7 +323,7 @@ l<-foreach(i=seq_along(lf),.packages=c("raster","sf")) %do% {
     })
     ll<-do.call("rbind",ll)  
     #plot(lf[[i]][[1]])
-    #plot(st_geometry(dss[w,]),add=TRUE)
+    #plot(st_geometry(dsbuffer[w,]),add=TRUE)
     dimnames(ll)[[1]]<-w
     ll
   }
@@ -334,8 +354,8 @@ l<-l[substr(l,nchar(l)-3,nchar(l))==".tif"]
 
 r<-stack(l)
 #NAvalue(r)<-0
-dss<-st_buffer(st_as_sf(spTransform(ds,CRS(proj4string(r)))),1000)
-e<-exact_extract(r,dss)
+dsbuffer<-st_buffer(st_as_sf(spTransform(ds,CRS(proj4string(r)))),1000)
+e<-exact_extract(r,dsbuffer)
 l<-lapply(seq_along(e),function(i){
   cov<-cbind(classn=e[[i]][,"LULC2011"],area=e[[i]][,"coverage_fraction"]*res(r)[1]*res(r)[2])
   a<-aggregate(area~classn,data=cov,FUN=sum)
@@ -360,13 +380,15 @@ ds$agriculture<-ds$crop+ds$pasture
 ds$natural<-ds$shrub+ds$forest
 
 
-xlim<-c(550000,650000)
-ylim<-c(5010000,5080000)
+xlim<-bbox(mappingzone)[1,]*1000
+ylim<-bbox(mappingzone)[2,]*1000
 
-rlcc<-ratify(r)
+#rlcc<-ratify(r)
 
 #arg <- list(at=rat$ID, labels=rat$class)
-plot(r[[1]],col=cols,breaks=c(0,lccnames$classn),axis.args=arg,xlim=xlim,ylim=ylim,zlim=c(0,220),legend=FALSE,legend.width=1,legend.shrink=1.25,axes=TRUE)
+cols<-c("gray","skyblue","grey20","grey50","brown","skyblue","brown","brown","lightgoldenrod","lightgoldenrod","green","forestgreen")
+par(mar=c(1,0.5,0.5,8))
+plot(r[[1]],col=cols,breaks=c(0,lccnames$classn),axis.args=arg,xlim=xlim,ylim=ylim,zlim=c(0,220),legend=FALSE,legend.width=1,legend.shrink=1.25,axes=TRUE,bty="n")
 legend(x=par("usr")[2],y=par("usr")[4],legend=paste(lccnames$class,lccnames$classn),fill=cols,bty="n",border=NA,cex=1.2,xpd=TRUE)
 plot(st_geometry(st_buffer(st_transform(st_as_sf(ds),proj4string(r)),1000)),add=TRUE)
 #loc<-locator()
@@ -374,174 +396,106 @@ plot(st_geometry(st_buffer(st_transform(st_as_sf(ds),proj4string(r)),1000)),add=
 #plot(st_geometry(st_buffer(st_transform(st_as_sf(ds),proj4string(r)),1000)),add=TRUE)
 #legend(x=par("usr")[2],y=par("usr")[4],legend=paste(lccnames$class,lccnames$classn),fill=cols,bty="n",border=NA,cex=1.2,xpd=TRUE)
 
-plot(st_geometry(st_buffer(st_transform(st_as_sf(ds),proj4string(r)),1000)),add=TRUE)
-
-r2<-r
-r2<-crop(r2,c(range(loc$x),range(loc$y))[c(1,2,3,4)])
-plot(r2[[1]],col=rat$cols,breaks=c(rat$ID,210), axis.args=arg,zlim=c(0,210),legend.width=1,legend.shrink=1)
 
 
+###################################################
+### lcc2000 #######################################
 
-rr<-raster(ext=extent(c(0,1,0,1)),res=0.1)
-rr<-setValues(rr,sample(c(1:5,40.5),ncell(rr),replace=TRUE))
-colss<-c("red","blue","green","orange","gray","cyan","darkred","dodgerblue")
-args <- list(at=1:5, labels=1:5)
-plot(rr,zlim=c(0,8),col=colss,breaks=c(0,1,2,3,4,5,6,7,8),axis.args=args)
+### Old landcover from OpenCanada circa 2000
+# https://open.canada.ca/data/en/dataset/97126362-5a85-4fe0-9dc2-915464cfdbb7
 
+#l<-list.files("C:/Users/God/Documents/UdeS/Documents/UdeS/Consultation/JAllostry/Doc/lcc2000",pattern=".shp",full.names=TRUE)
+#s<-lapply(l,st_read)
+#s<-do.call("rbind",s)
+#ss<-st_transform(s,crs=st_crs(st_as_sf(ds)))
 
-rat<-levels(rlcc)[[1]]
-rat$class<- c("NA",lccnames$class)
-rat$code <- c(0,lccnames$classn)
-cols<-c("gray","skyblue","grey20","grey50","brown","skyblue","brown","brown","lightgoldenrod","lightgoldenrod","green","forestgreen")
-rat$cols<-cols
-levels(rlcc) <- rat
-levels(s$cover)
-hn<-levels(rlcc)[[1]][,1]
-cols<-c("lightgoldenrod","skyblue","grey30","forestgreen","grey60","brown")
+#cla<-as.data.frame(read_excel("C:/Users/God/Documents/UdeS/Documents/UdeS/Consultation/JAllostry/Doc/lcc2000class.xlsx"))
 
-#cols<-sample(colors(),length(hn))
-par(mfrow=c(1,1),mar=c(0,0,0,0))
-plot(rlcc,legend=FALSE,col=cols[order(as.character(rat$code))])
-levelplot(r,col.regions=cols,xlim=c(500000,700000),ylim=c(5000000,5150000))
-legend("bottomright",legend=levels(s$cover),fill=cols,bty="n",border=NA,cex=2)
-points(ds,col="red",pch=16,cex=0.8)
-dbuffer<-1
-buffer<-st_transform(st_buffer(st_as_sf(ds),dist=dbuffer),4326)
-plot(st_geometry(buffer),add=TRUE)
+#clan<-sapply(strsplit(cla[,1],"-"),"[",1)
+#cla<-strsplit(cla[,1],"-") %>% 
+#  sapply("[",-1) %>% 
+#  sapply(paste0,collapse="") %>% 
+#  sapply(function(i){gsub('[[:digit:]]+', '', i)}) %>% 
+#  sapply(function(i){gsub("  "," ",i)}) %>% 
+#  sapply(function(i){gsub("  ","",i)}) %>% 
+#  unname
 
 
+#cla[grep("Conifères|Coniférien|Mixte|Feuillu|Forêt",cla)]<-"Natural"
+#cla[grep("Cultures|Prairies|agricoles",cla)]<-"Agriculture"
+#cla[grep("humide",cla)]<-"Wet"
+#cla[grep("Arbustes|arbustes|herbacées",cla)]<-"Natural"
+#cla[grep("découvert|Stérile|Bryo",cla)]<-"Exposed"
+#cla[grep("développées",cla)]<-"Urban"
+#cla[grep("Ombre",cla)]<-NA
 
-### lcc2000 ############################
+#s$cover<-factor(cla[match(s$COVTYPE,clan)])
 
-l<-list.files("C:/Users/God/Documents/UdeS/Documents/UdeS/Consultation/JAllostry/Doc/lcc2000",pattern=".shp",full.names=TRUE)
-s<-lapply(l,st_read)
-s<-do.call("rbind",s)
-#s<-st_transform(s,crs=26918)
-ss<-st_transform(s,crs=st_crs(st_as_sf(ds)))
+#lcc<-levels(s$cover)
 
-#https://open.canada.ca/data/en/dataset/97126362-5a85-4fe0-9dc2-915464cfdbb7#
-cla<-as.data.frame(read_excel("C:/Users/God/Documents/UdeS/Documents/UdeS/Consultation/JAllostry/Doc/lcc2000class.xlsx"))
+#r<-raster(nrow=2000,ncol=3000,ext=extent(s))
 
-clan<-sapply(strsplit(cla[,1],"-"),"[",1)
-cla<-strsplit(cla[,1],"-") %>% 
-  sapply("[",-1) %>% 
-  sapply(paste0,collapse="") %>% 
-  sapply(function(i){gsub('[[:digit:]]+', '', i)}) %>% 
-  sapply(function(i){gsub("  "," ",i)}) %>% 
-  sapply(function(i){gsub("  ","",i)}) %>% 
-  unname
+#rx<-fasterize(s,r,field="cover",fun="max")
+#rn<-fasterize(s,r,field="cover",fun="min")
 
+#rlcc<-ratify(rx)
 
-cla[grep("Conifères|Coniférien|Mixte|Feuillu|Forêt",cla)]<-"Natural"
-cla[grep("Cultures|Prairies|agricoles",cla)]<-"Agriculture"
-cla[grep("humide",cla)]<-"Wet"
-cla[grep("Arbustes|arbustes|herbacées",cla)]<-"Natural"
-cla[grep("découvert|Stérile|Bryo",cla)]<-"Exposed"
-cla[grep("développées",cla)]<-"Urban"
-cla[grep("Ombre",cla)]<-NA
-
-s$cover<-factor(cla[match(s$COVTYPE,clan)])
-
-lcc<-levels(s$cover)
-
-r<-raster(nrow=2000,ncol=3000,ext=extent(s))
-
-rx<-fasterize(s,r,field="cover",fun="max")
-rn<-fasterize(s,r,field="cover",fun="min")
-
-rlcc<-ratify(rx)
-
-levels(s$cover)
-hn<-levels(rlcc)[[1]][,1]
-cols<-c("lightgoldenrod","skyblue","grey30","forestgreen","grey60","brown")
-#cols<-sample(colors(),length(hn))
-par(mar=c(0,0,0,0))
-plot(rlcc,legend=FALSE,col=cols)
-legend("bottomright",legend=levels(s$cover),fill=cols,bty="n",border=NA,cex=2)
-points(ds,col="red",pch=16,cex=0.8)
-dbuffer<-1
-buffer<-st_transform(st_buffer(st_as_sf(ds),dist=dbuffer),4326)
-plot(st_geometry(buffer),add=TRUE)
-
-vrlcc<-velox(rlcc)
-l<-vrlcc$extract(buffer)
-l<-lapply(l,function(i){
-  x<-i[,1]
-  x<-x[!is.na(x)]
-  sum(x==4L)/length(x)
-})
-
-ds$natural<-unlist(l)
-
-
-grid<-st_make_grid(rlcc,cellsize=c(0.0200,0.0200),what="centers")
-pr<-raster(SpatialGrid((points2grid(as_Spatial(grid)))))
-g<-st_buffer(st_as_sf(xyFromCell(pr,1:ncell(pr),spatial=TRUE)),dist=0.01)
-l<-v$extract(g)
-
-l<-lapply(l,function(i){
-  x<-i[,1]
-  x<-x[!is.na(x)]
-  sum(x==4L)/length(x)
-})
-pr<-setValues(pr,unlist(l))
-plot(pr,col=rev(viridis(100)))
-
-#tmap_mode("view")
-#tm_shape(ds) +
-#  tm_dots() +
-#  tm_layout(basemaps = c("Esri.WorldImagery", "Esri.WorldShadedRelief", "Esri.NatGeoWorldMap"))
-
-
-
-plot(ds)
-plot(Q,add=TRUE)
-l<-locator()
-h<-gConvexHull(SpatialPoints(cbind(l$x,l$y),proj4string=CRS(proj4string(ds))))
-plot(h,add=TRUE)
-o<-over(ds,h)
-d<-d[!is.na(o),]
-ds<-ds[!is.na(o),]
-
-#plot(d$jul,log(d$sp+1))
-
-#m<-gam(sp~s(jul),data=d,family=nb())
-
-
-par(mar=c(0,0,0,0))
-plot(st_geometry(st_as_sfc(st_bbox(buffer))))
-plot(rlcc,legend=FALSE,col=cols,add=TRUE)
+#levels(s$cover)
+#hn<-levels(rlcc)[[1]][,1]
+#cols<-c("lightgoldenrod","skyblue","grey30","forestgreen","grey60","brown")
+#par(mar=c(0,0,0,0))
+#plot(rlcc,legend=FALSE,col=cols)
+#legend("bottomright",legend=levels(s$cover),fill=cols,bty="n",border=NA,cex=2)
 #points(ds,col="red",pch=16,cex=0.8)
-plot(st_geometry(buffer),add=TRUE)
-legend("bottomright",legend=levels(s$cover),fill=cols,bty="n",cex=2,bg=gray(1,0.5))
+#dbuffer<-1
+#buffer<-st_transform(st_buffer(st_as_sf(ds),dist=dbuffer),4326)
+#plot(st_geometry(buffer),add=TRUE)
 
+#vrlcc<-velox(rlcc)
+#l<-vrlcc$extract(buffer)
+#l<-lapply(l,function(i){
+#  x<-i[,1]
+#  x<-x[!is.na(x)]
+#  sum(x==4L)/length(x)
+#})
 
+#ds$natural<-unlist(l)
+
+#grid<-st_make_grid(rlcc,cellsize=c(0.0200,0.0200),what="centers")
+#pr<-raster(SpatialGrid((points2grid(as_Spatial(grid)))))
+#g<-st_buffer(st_as_sf(xyFromCell(pr,1:ncell(pr),spatial=TRUE)),dist=0.01)
+#l<-v$extract(g)
+
+#l<-lapply(l,function(i){
+#  x<-i[,1]
+#  x<-x[!is.na(x)]
+#  sum(x==4L)/length(x)
+#})
+#pr<-setValues(pr,unlist(l))
+#plot(pr,col=rev(viridis(100)))
+
+#par(mar=c(0,0,0,0))
+#plot(st_geometry(st_as_sfc(st_bbox(buffer))))
+#plot(rlcc,legend=FALSE,col=cols,add=TRUE)
+#points(ds,col="red",pch=16,cex=0.8)
+#plot(st_geometry(buffer),add=TRUE)
+#legend("bottomright",legend=levels(s$cover),fill=cols,bty="n",cex=2,bg=gray(1,0.5))
 
 rm(rx,rn,s,can);gc();gc()
 
-# "http://forobs.jrc.ec.europa.eu/products/glc2000/legend/GLC2000_Lccs_110604_export.xls"
-#lcc<-as.data.frame(read_xls("C:/Users/rouf1703/Downloads/GLC2000_Lccs_110604_export.xls"))
-#cov<-raster("C:/Users/rouf1703/Downloads/CAN_cov/CAN_cov.grd")
-#cov<-crop(cov,extent(-76,-70,45,49))
-#cov<-crop(cov,xs2)
-#que<-spTransform(que,proj4string(ds))
-#cov<-projectRaster(cov,crs=CRS(proj4string(ds)))
-#mapview(cov)+mapview(ds[1:1000,])
-#plot(ds)
-#plot(que,add=TRUE)
-#plot(cov,add=TRUE)
 
-######################
-### weeks
-library(reshape)
-library(tidyr)
-par(mar=c(0,0,0,3))
-d$wy<-paste(d$year,d$Week,sep="_")
-d$k<-1
-x<-reshape(unique(d[,c("Site","wy","k")]), idvar="Site", timevar="wy", direction="wide")
-x<-x[,c(names(x)[1],sort(names(x)[-1]))]
-x<-raster(t(as.matrix(x[,-1])))
-plot(x,asp=NULL)
+###############################################
+### weeks #####################################
+d$pch<-15
+x<-dcast(unique(d[,c("id","week","pch")]),id~week,value.var="pch")
+x<-melt(x,id=c("id","weeks"))
+x$variable<-factor(x$variable,levels=unique(x$variable))
+x$id<-factor(x$id,levels=unique(x$id))
+par(mar=c(5,4,1,1))
+plot(as.integer(x$variable),as.integer(x$id),pch=x$value,xaxt="n",yaxt="n",xlab="weeks",ylab="traps")
+axis(1,at=1:nlevels(x$variable),labels=levels(x$variable),las=2,cex.axis=0.5,srt=45)
+axis(2,at=1:nlevels(x$id),labels=levels(x$id),las=2,cex.axis=0.35)
+
 
 ################################################
 ### space-time simple from spde tutorial
@@ -661,8 +615,6 @@ for (j in 1:k){
 
 ## ----inout---------------------------------------------------------------
 b<-gBuffer(gConvexHull(SpatialPoints(domain$loc,p=CRS(proj4string(ds)))),width=0.1,byid=FALSE)
-a<-concaveman(coordinates(xs),2)
-a<-gBuffer(spPolygons(a,crs=CRS(proj4string(xs))),width=5)
 o <- over(SpatialPoints(projgrid$lattice$loc,p=CRS(proj4string(ds))),b)
 
 ## ----setNAs---------------------------------------------------------------
@@ -715,7 +667,7 @@ axis(1,at=xx,label=20:40)
 
 plot(st_geometry(st_transform(st_as_sf(inla.mesh2sp(mesh)$triangles),4326)))
 
-pr<-raster(ext=extent(a),res=c(60,60),crs=CRS(proj4string(a)))
+pr<-raster(ext=extent(mappingzone),res=c(60,60),crs=CRS(proj4string(mappingzone)))
 g<-st_buffer(st_as_sf(xyFromCell(pr,1:ncell(pr),spatial=TRUE)),dist=1)
 
 plot(mesh,asp=1)
@@ -998,7 +950,7 @@ par(mfrow=c(1,1))
 
 # to determine if there is a microhabitat/trap placement effect
 
-l<-split(dss,dss$date)
+l<-split(dsbuffer,dsbuffer$date)
 l<-lapply(seq_along(l),function(i){
   print(i)
   x<-l[[i]]
