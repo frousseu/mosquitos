@@ -36,9 +36,16 @@ library(exactextractr)
 library(foreach)
 library(doParallel)
 
+### first set working directory
+# all files should be in this folder
+setwd("C:/Users/God/Documents/UdeS/Documents/UdeS/Consultation/JAllostry/Doc/GDG_INSPQ/")
+
+
+### useful functions for plotting and predictions
 source("https://raw.githubusercontent.com/frousseu/FRutils/master/R/colo.scale.R")
 source("https://raw.githubusercontent.com/frousseu/UdeS/master/GStecher/newdata.R")
-### this is to tunr the formula using dummy variables for factors
+
+### this is to turnthe formula using dummy variables for factors
 mmatrix<-function(i,dat){
   if(!is.list(i)){
     i<-list(i)  
@@ -59,6 +66,7 @@ modellmm<-lapply(mm,function(i){
   as.formula(paste("y ~ -1 + intercept +",paste(dimnames(i)[[2]],collapse=" + "),"+ f(spatial, model = spde)"))
 })
 
+### function for turning mesh to sp polygons
 inla.mesh2sp <- function(mesh) {
   crs <- inla.CRS(inla.CRSargs(mesh$crs))
   isgeocentric <- identical(inla.as.list.CRS(crs)[["proj"]], "geocent")
@@ -83,26 +91,25 @@ inla.mesh2sp <- function(mesh) {
   list(triangles = triangles, vertices = vertices)
   }
 
+### projection that will be used and a contour map of Quebec
 prj<-"+proj=utm +zone=18 +datum=WGS84 +units=km +no_defs +ellps=WGS84 +towgs84=0,0,0"
 can<-raster::getData("GADM", country = "CAN", level = 2)
 que<-can[can$NAME_1=="Québec",]
 Q<-as(ms_simplify(st_as_sf(spTransform(que,CRS(prj))),keep=0.03),"Spatial")
 
 
-################
-### new data ###
+#####################################################
+### Read DATA #######################################
 
-# can we assume there is a single sample per trap id per date?
-# do we have trap nights when counts were 0 ???
+# Do we have trap nights when counts were 0 ???
 
-### GDG
-gdg<-as.data.frame(read_excel("C:/Users/God/Documents/UdeS/Documents/UdeS/Consultation/JAllostry/Doc/GDG_INSPQ/GDG.xls",sheet="Total"))
+### GDG #############################################
+gdg<-as.data.frame(read_excel("GDG.xls",sheet="Total"))
 ngdg<-names(gdg)
-
 gdg$id<-gdg$SiteP
 gdg$lon<-gdg$Longitude
 gdg$lat<-gdg$Latitude
-gdg$date<-gdg$Collection_date
+gdg$date<-as.character(gdg$Collection_date) # make sure the date is OK cause it is read as POSIX
 gdg$nights<-gdg$NbNuitOp_Calc
 gdg$code<-gdg$Species
 gdg$species<-gdg$Taxa_Name
@@ -111,77 +118,157 @@ gdg$type<-gdg$Typ
 gdg$method<-gdg$MethP
 
 gdg<-gdg[,setdiff(names(gdg),ngdg)]
+gdg$db<-"gdg"
 
-### INSPQ
+table(gdg$count>0)
+
+            
+### INSPQ ###########################################
+
 # A single trap id can have multiple method...
 # What is H and E dates?
 # What are the different coordinates?
 # Is this the total count taking into account the subsampling?
-inspq<-as.data.frame(read_excel("C:/Users/God/Documents/UdeS/Documents/UdeS/Consultation/JAllostry/Doc/GDG_INSPQ/INSPQ.xlsx",sheet="Sheet1"))
-ninspq<-names(inspq)
 
+### check count values in column Pools_Entomo__NbMS in every sheet
+### All sheets seem to have values over 50, except the two last
+### I assume we have to sum every line
+sheets<-excel_sheets("INSPQ.xlsx")
+par(mfrow=n2mfrow(length(sheets)),mar=c(5,5,1,1),oma=c(0,0,3,1))
+lapply(sheets,function(i){
+  x<-as.data.frame(read_excel("INSPQ.xlsx",sheet=i))
+  h<-hist(x$Pools_Entomo__NbMS,main=i,breaks=20,plot=FALSE)
+  b<-barplot(ifelse(h$counts<1,NA,h$counts),log="y",yaxt="n",ylab="Freq",xlab="",border="grey70",plot=FALSE)[,1]
+  barplot(ifelse(h$counts<1,NA,h$counts),log="y",yaxt="n",ylab="Freq",xlab="",border="grey70")
+  axis(1,at=b,labels=paste0("[",h$breaks[-length(h$breaks)]," - ",h$breaks[-1],"]"),las=2,cex.axis=0.75)
+  axis(2,las=2)
+  mtext(side=3,line=-2,text=paste("Sheet",i))
+})
+mtext(side=3,line=1,text="Column Pools_Entomo__NbMS",outer=TRUE)
+
+
+### Read data from inspq first sheet
+inspq<-as.data.frame(read_excel("INSPQ.xlsx",sheet="Sheet1"))
+ninspq<-names(inspq)
 inspq$id<-inspq$Pools_Entomo__Site
 inspq$lon<-inspq$Stations_Entomo__Longdec
 inspq$lat<-inspq$Stations_Entomo__Latdec
 inspq$method<-inspq$Pools_Entomo__MethP
 inspq$species<-inspq$Pools_Entomo__TaxaName
-#inspq$group<-inspq$Pools_Entomo__TaxaGrp3
 inspq$code<-inspq[,7]
 inspq$count<-inspq$Pools_Entomo__NbMS
 inspq$type<-inspq$Pools_Entomo__Typ
-inspq$date<-inspq$Echantillons_Entomo__ColDate
-#inspq$beg<-inspq$Echantillons_Entomo__ColHStart
-#inspq$end<-inspq$Echantillons_Entomo__ColHEnd
+inspq$date<-as.character(inspq$Echantillons_Entomo__ColDate) # make sure the date is OK cause it is read as POSIX
+inspq<-inspq[!is.na(inspq$date),] # drop weird lines without dates
 inspq$nights<-inspq$Information_Supp_Entomo__NB_Nuits_Operation
-#inspq$year<-as.integer(substr(inspq$date,1,4))
 inspq<-inspq[,setdiff(names(inspq),ninspq)]
+inspq$db<-"inspq"
 
-nrow(unique(inspq[,c("id","lon","lat")]))
-ids<-unique(inspq[,c("id","lon","lat")])
-dids<-ids$id[duplicated(ids$id)] # ids changing coordinates
-dids
-table(as.Date(inspq$end)-as.Date(inspq$beg))
+table(inspq$count>0)
 
+
+### POOL GDG AND INSPQ ############################
+
+### all names are common to both database
 setdiff(names(gdg),names(inspq))
 setdiff(names(inspq),names(gdg))
 
+### bind data
 d<-as.data.table(rbind(gdg,inspq[,names(gdg)]))
-d$species<-gsub("à","a",gsub("é","e",gsub("/| |-","_",gsub("\\.","",d$species))))
-d[,c("code","group","type"):=NULL] # not sure what type means or if it is useful
-d<-dcast(d,...~species,value.var="count",fill=0,fun=sum) # need to understand and remove the fun here, should expect a single value
-setorder(d,id,date,method)
-table(duplicated(d[,c("id","lon","lat","date","method")]))
-d<-d[d$method%in%c("LT"),] # keeps only LTs
-d[,c("NA"):=NULL] # removes NA column
-notspecies<-c("id","lon","lat","date","nights","method")
+
+### some cleaning
+d<-d[!is.na(d$species),] # remove NA species
+d<-d[d$method%in%c("LT"),] # keep only LTs
+table(d$type) # no male listed
+d<-d[,type:=NULL] # drop type column
+d$species<-gsub("à","a",gsub("é","e",gsub("/| |-","_",gsub("\\.","",d$species)))) # remove accents and special characters
+
+### check number of lines to sum (or duplicate lines based on id, lon, lat, date, species)
+d[,nlines:=.N,by=.(id,lon,lat,date,code,species,db)] # counts the nb of lines per by
+d[nlines>1,][order(-nlines,id,date)] # shows the highest nb off lines
+d[,nlines:=NULL] # removes le tthe nb of lines
+
+### sum values and keep varying nights
+# some traps have more than one nb of nights of effort
+d<-d[,.(count=sum(count)),by=.(id,lon,lat,date,nights,code,species,db)] # sums values per by
+nrow(d)
+
+### show varying night (3 cases)
+d[,nlines:=.N,by=.(id,lon,lat,date,code,species,db)]
+d[nlines>1,][order(-nlines,id,date)]
+nrow(d)
+
+### read in species / code correspondance
+taxa<-as.data.frame(read_excel("GDG.xls",sheet="Taxa"))
+taxa$species<-gsub("/| |-","_",gsub("\\.","",taxa$TaxaName))
+taxa$code<-taxa$TaxaCode
+
+### show code species that don't have matches in taxa names and drop them
+# some species seem to have wrong codes
+# those species not used in this analysis
+table(paste(d$code,d$species)[!paste(d$code,d$species)%in%paste(taxa$code,taxa$species)])
+nrow(d)
+d<-d[paste(d$code,d$species)%in%paste(taxa$code,taxa$species),]
+nrow(d)
+
+### check if several lines per species
+# seems to be a problem with different night values, will fix later
+d[,nlines:=.N,by=.(id,lon,lat,date,species,db)]
+d[nlines>1,]
+
+### drop QUW code
+d<-d[d$code!="QUW",]
+d[,nlines:=NULL]
+
+### verify if single line per species, per trap, per date
+table(d[,.(nlines=.N),by=.(id,lon,lat,date,code,species,db)]$nlines)
+table(d[,.(nlines=.N),by=.(id,lon,lat,date,species,db)]$nlines)
+
+### paste code and species to ID species and remove old columns
+d[,species:=paste(code,species,sep="_"),]
+d[,code:=NULL]
+
+### cast to get species columns
+# there should not be any waring here, otherwise it means there are more than one values
+d<-dcast(d,...~species,value.var="count",fill=0) 
+
+### check if there duplicate id/dates 
+d[,nlines:=.N,by=.(id,date)]
+d[nlines>1,]
+d[,nlines:=NULL]
+
+### order by night and drop the longest number of nights (don't know what to do with this...)
+nrow(d)
+setorder(d,id,date,nights)
+d<-d[!duplicated(d[,c("id","lon","lat","date")]),]
+nrow(d)
+
+### are there any duplicates leftovers for id,lon,lat,date?
+nrow(d)
+setorder(d,id,date)
+table(duplicated(d[,c("id","date")]))
+
+### order species per reverse total abundance
+notspecies<-c("id","lon","lat","date","nights","db")
 species<-setdiff(names(d),notspecies)
 total<-colSums(d[,..species])
 species<-species[rev(order(total))]
 d<-d[,c(notspecies,species),with=FALSE]
 rev(sort(total))
 
-#d<-as.data.frame(read_excel("C:/Users/God/Documents/UdeS/Documents/UdeS/Consultation/JAllostry/Doc/BD.xlsx"))
-#d$Long<-d$LongdecSatScan
-#d$Lat<-d$LatdecSatScan
-#d$Long<-d$Long+0.3
-#d$Lat<-d$Lat-0.2
-#d$Site<-ifelse(nchar(d$Site)==6,sapply(strsplit(d$Site,"(?<=.{3})", perl = TRUE),paste,collapse=" "),d$Site)
-#unique(d$Site)
+### random checks
+d[d$date=="2011-07-12" & d$id=="TER001",]
 
-#d$date<-as.Date(d$Day)
-#d$date<-as.Date(paste0(d$Annee,"-01-01"))+d$Week*7
-d$jul<-as.integer(format(d$date,"%j"))
-d$date<-as.character(d$date)
+
+### add info
+d$jul<-as.integer(format(as.Date(d$date),"%j"))
 d$year<-substr(d$date,1,4)
-d<-d[!is.na(d$year),] # removes what does not have a year
-d$week<-format(as.Date(d$date),"%Y-W%V")
-d$year_week<-paste(d$year,d$week,sep="_")
+d$week<-format(as.Date(d$date),"%Y_W%V")
+#d$year_week<-paste(d$year,d$week,sep="_")
 
-d<-d[order(d$id,d$year_week),]
+setorder(d,id,week)
 unique(d[,c("id","lon","lat","year")])[,lapply(.SD,length),by=year,.SDcols="id"][order(year),]
 d[,lapply(.SD,sum),by=year,.SDcols=species][order(year),1:7]
-#Encoding(species)<-"UTF-8"
-#Encoding(names(d))<-"UTF-8"
 
 l<-split(d,d$year)
 ds<-d
@@ -190,7 +277,6 @@ ds$longitude<-d$lon
 ds$latitude<-d$lat
 proj4string(ds)<-"+init=epsg:4326"
 ds<-spTransform(ds,CRS(prj))
-#ds<-ds[ds$Annee%in%c(2014:2016),][1:500,]
 
 l<-split(ds,ds$year)
 par(mfrow=n2mfrow(length(l)),mar=c(0.25,0.25,0.25,0.25))
@@ -202,6 +288,7 @@ lapply(l,function(i){
   plot(x,add=TRUE,pch=16,cex=0.75,col=gray(0,0.9))
   mtext(i$year[1],side=3,adj=c(0,0),line=-1.25)
 })
+par(mfrow=c(1,1))
 
 
 plot(ds)
@@ -214,6 +301,7 @@ l<-list(x = c(537.794779946664, 537.794779946664, 558.632058968996,
                                                       4999.8765071763, 4999.8765071763, 5003.08224241051, 5013.23373731882, 
                                                       5029.26241348985, 5049.03111410078, 5067.19694709461, 5083.22562326563, 
                                                       5088.56851532264, 5081.62275564853, 5079.48559882573))
+
 h<-gConvexHull(SpatialPoints(cbind(l$x,l$y),proj4string=CRS(proj4string(ds))))
 plot(h,add=TRUE)
 o<-over(ds,h)
@@ -221,7 +309,7 @@ d<-d[!is.na(o),]
 ds<-ds[!is.na(o),]
 
 mappingzone<-concaveman(coordinates(ds),2)
-mappingzone<-gBuffer(spPolygons(mappingzone,crs=CRS(proj4string(ds))),width=5)
+mappingzone<-gBuffer(spPolygons(mappingzone,crs=CRS(proj4string(ds))),width=10)
 plot(mappingzone)
 plot(Q,add=TRUE,border="grey80")
 plot(ds,add=TRUE,pch=1)
