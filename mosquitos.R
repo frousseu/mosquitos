@@ -314,6 +314,50 @@ plot(mappingzone)
 plot(Q,add=TRUE,border="grey80")
 plot(ds,add=TRUE,pch=1)
 
+### Build prediction grid/locations ###################################
+
+# add data for prediction maps to ds with NAs for numbers of mosquitos
+# this allows to make the lcc/daymet extractions in a single step
+# and INLA does predictions for NA response values
+
+pgrid<-raster(ext=extent(mappingzone),res=c(10,10),crs=CRS(proj4string(mappingzone)))
+pgrid<-setValues(pgrid,1)
+g<-xyFromCell(pgrid,1:ncell(pgrid),spatial=TRUE)
+plot(pgrid)
+plot(g,add=TRUE)
+
+ee<-expand.grid(week=sort(unique(ds$week)))
+ee$id<-"pred"
+ee$year<-as.integer(substr(ee$week,1,4))
+ee$date<-as.Date(ee$week,"%Y_W%V")
+ee$jul<-as.integer(format(ee$date,"%j"))
+ee$date<-as.character(ee$date)
+ee$nights<-1
+ee$db<-"pred"
+eesp<-as.data.frame(matrix(rep(NA,nrow(ee)*length(species)),ncol=length(species)))
+names(eesp)<-species
+ee<-cbind(ee,eesp)
+coo<-as.data.frame(coordinates(g))
+names(coo)<-c("longitude","latitude")
+coo$lon<-coo$longitude
+coo$lat<-coo$latitude
+
+info<-ee[rep(1:nrow(ee),each=nrow(coo)),]
+coords<-coo[rep(1:nrow(coo),times=nrow(ee)),]
+
+pred<-cbind(info,coords)
+coordinates(pred)<-~lon+lat
+proj4string(pred)<-CRS(proj4string(ds))
+
+setdiff(names(ds),names(pred))
+setdiff(names(pred),names(ds))
+
+pred<-pred[,names(ds)]
+
+ds<-rbind(ds,pred)
+
+
+
 ################
 ### old data ###
 
@@ -445,17 +489,22 @@ r<-stack(l)
 dsbuffer<-st_buffer(st_as_sf(spTransform(ds,CRS(proj4string(r)))),1000)
 e<-exact_extract(r,dsbuffer)
 l<-lapply(seq_along(e),function(i){
-  cov<-cbind(classn=e[[i]][,"LULC2011"],area=e[[i]][,"coverage_fraction"]*res(r)[1]*res(r)[2])
-  a<-aggregate(area~classn,data=cov,FUN=sum)
-  a$area<-a$area/sum(a$area)
-  a$loc<-i
+  #cov<-cbind(classn=e[[i]][,"LULC2011"],area=e[[i]][,"coverage_fraction"]*res(r)[1]*res(r)[2])
+  #a<-aggregate(area~classn,data=cov,FUN=sum)
+  #a$area<-a$area/sum(a$area)
+  #a$loc<-i
+  # data.table version is faster
+  cov<-data.table(classn=e[[i]][,"LULC2011"],area=e[[i]][,"coverage_fraction"]*res(r)[1]*res(r)[2])
+  a<-cov[,.(area=sum(area)),by=.(classn)]
+  a[,area:=area/sum(area)]
+  a[,loc:=i]
   cat("\r",paste(i,length(e),sep=" / "))
   a
 })
 l<-do.call("rbind",l)
 ld<-setDT(l)
 pcov<-dcast(ld,loc~classn,value.var="area",fill=0)
-rowSums(pcov[,-1])
+table(rowSums(pcov[,-1])) # should expect only 1's
 
 lccnames<-as.data.frame(read_excel("C:/Users/God/Documents/mosquitos/data/0_ListeReclassification.xlsx",sheet="Reclassification",range="C52:D64"))
 names(lccnames)<-c("classn","orig")
@@ -478,7 +527,7 @@ cols<-c("gray","skyblue","grey20","grey50","brown","skyblue","brown","brown","li
 par(mar=c(1,0.5,0.5,8))
 plot(r[[1]],col=cols,breaks=c(0,lccnames$classn),axis.args=arg,xlim=xlim,ylim=ylim,zlim=c(0,220),legend=FALSE,legend.width=1,legend.shrink=1.25,axes=TRUE,bty="n")
 legend(x=par("usr")[2],y=par("usr")[4],legend=paste(lccnames$class,lccnames$classn),fill=cols,bty="n",border=NA,cex=1.2,xpd=TRUE)
-plot(st_geometry(st_buffer(st_transform(st_as_sf(ds),proj4string(r)),1000)),add=TRUE)
+plot(st_geometry(st_buffer(st_transform(st_as_sf(ds[ds$id!="pred",]),proj4string(r)),1000)),add=TRUE)
 #loc<-locator()
 #plot(r[[1]],col=cols,breaks=c(0,lccnames$classn),axis.args=arg,xlim=range(loc$x),ylim=range(loc$y),zlim=c(0,220),legend=FALSE,legend.width=1,legend.shrink=1.25,axes=TRUE)
 #plot(st_geometry(st_buffer(st_transform(st_as_sf(ds),proj4string(r)),1000)),add=TRUE)
@@ -569,7 +618,9 @@ plot(st_geometry(st_buffer(st_transform(st_as_sf(ds),proj4string(r)),1000)),add=
 #plot(st_geometry(buffer),add=TRUE)
 #legend("bottomright",legend=levels(s$cover),fill=cols,bty="n",cex=2,bg=gray(1,0.5))
 
-rm(rx,rn,s,can);gc();gc()
+rev(sort(sapply(ls(),function(i){object.size(get(i))})))
+
+rm(e,lf,dsbuffer,can);gc();gc()
 
 
 ###############################################
@@ -595,7 +646,9 @@ colSums(xs@data[,5:33])
 #xs2$sp<-log(xs2$A9+1)
 xs<-ds[ds$year%in%c("2015"),]
 #xs$sp<-log(xs$A29+1)
-xs$sp<-xs$A3
+sp<-names(xs)[grep("CQP_",names(xs))]
+sp
+xs$sp<-xs[,sp]
 #xs<-rbind(xs1,xs2)
 #xs<-xs1
 #xs$Week<-sample(xs$Week)
@@ -755,7 +808,7 @@ axis(1,at=xx,label=20:40)
 
 plot(st_geometry(st_transform(st_as_sf(inla.mesh2sp(mesh)$triangles),4326)))
 
-pr<-raster(ext=extent(mappingzone),res=c(60,60),crs=CRS(proj4string(mappingzone)))
+pr<-raster(ext=extent(mappingzone),res=c(6,6),crs=CRS(proj4string(mappingzone)))
 g<-st_buffer(st_as_sf(xyFromCell(pr,1:ncell(pr),spatial=TRUE)),dist=1)
 
 plot(mesh,asp=1)
