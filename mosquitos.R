@@ -324,7 +324,7 @@ pgrid<-raster(ext=extent(mappingzone),res=c(10,10),crs=CRS(proj4string(mappingzo
 pgrid<-setValues(pgrid,1)
 g<-xyFromCell(pgrid,1:ncell(pgrid),spatial=TRUE)
 plot(pgrid)
-plot(g,add=TRUE)
+plot(g,add=TRUE,cex=0.3)
 
 ee<-expand.grid(week=sort(unique(ds$week)))
 ee$id<-"pred"
@@ -524,7 +524,7 @@ ylim<-bbox(mappingzone)[2,]*1000
 
 #arg <- list(at=rat$ID, labels=rat$class)
 cols<-c("gray","skyblue","grey20","grey50","brown","skyblue","brown","brown","lightgoldenrod","lightgoldenrod","green","forestgreen")
-par(mar=c(1,0.5,0.5,8))
+par(mar=c(0,0,0,8))
 plot(r[[1]],col=cols,breaks=c(0,lccnames$classn),axis.args=arg,xlim=xlim,ylim=ylim,zlim=c(0,220),legend=FALSE,legend.width=1,legend.shrink=1.25,axes=TRUE,bty="n")
 legend(x=par("usr")[2],y=par("usr")[4],legend=paste(lccnames$class,lccnames$classn),fill=cols,bty="n",border=NA,cex=1.2,xpd=TRUE)
 plot(st_geometry(st_buffer(st_transform(st_as_sf(ds[ds$id!="pred",]),proj4string(r)),1000)),add=TRUE)
@@ -639,30 +639,38 @@ axis(2,at=1:nlevels(x$id),labels=levels(x$id),las=2,cex.axis=0.35)
 ################################################
 ### space-time simple from spde tutorial
 
-colSums(xs@data[,5:33])
+#colSums(xs@data[,5:33])
 #xs1<-ds[ds$year%in%c("2015"),]
 #xs2<-ds[ds$year%in%c("2016"),]
 #xs1$sp<-log(xs1$A9+1)
 #xs2$sp<-log(xs2$A9+1)
 xs<-ds[ds$year%in%c("2015"),]
+#xs2<-xs[xs$db=="pred",][92,]
+o<-over(xs,mappingzone)
+xs<-xs[!is.na(o),]
+#xs<-xs[xs$db!="pred",]
+
+#plot(mesh,asp=1)
+#plot(xs,add=TRUE)
 #xs$sp<-log(xs$A29+1)
-sp<-names(xs)[grep("CQP_",names(xs))]
+sp<-names(xs)[grep("CPR_",names(xs))]
 sp
-xs$sp<-xs[,sp]
+xs$sp<-xs@data[,sp]
 #xs<-rbind(xs1,xs2)
 #xs<-xs1
 #xs$Week<-sample(xs$Week)
 #xs$sp<-xs$A29
-xs<-xs[order(xs$Annee,xs$Week),]
-xs$Week<-paste(xs$Annee,xs$Week,sep="_")
-xs$week<-as.integer(substr(xs$Week,6,7))
-xs$week<-xs$week
-xs$week2<-xs$week^2
+xs<-xs[order(xs$week),]
+#xs$Week<-paste(xs$Annee,xs$Week,sep="_")
+#xs$week<-as.integer(substr(xs$Week,6,7))
+xs$jul<-xs$jul/100
+xs$jul2<-xs$jul^2
 
 domain <- inla.nonconvex.hull(coordinates(xs),convex=-0.075, resolution = c(100, 100))
-mesh<-inla.mesh.2d(loc=coordinates(xs),max.edge=c(5,10),offset=c(5,5),cutoff=5,boundary=domain,crs=CRS(proj4string(xs)))
+mesh<-inla.mesh.2d(loc.domain=coordinates(xs),max.edge=c(5,10),offset=c(5,5),cutoff=5,boundary=domain,crs=CRS(proj4string(xs)))
 plot(mesh,asp=1)
 plot(xs,add=TRUE,pch=1,col="red")
+plot(mappingzone,add=TRUE)
 
 ## ----spde----------------------------------------------------------------
 spde <- inla.spde2.pcmatern(
@@ -671,16 +679,16 @@ spde <- inla.spde2.pcmatern(
   prior.sigma=c(4, 0.5)) ### P(sigma>1)=0.01
 
 ## ----rfindex-------------------------------------------------------------
-k<-length(unique(xs$Week))
+k<-length(unique(xs$week))
 iset <- inla.spde.make.index('i', n.spde=spde$n.spde, n.group=k)
 
 ## ----apred---------------------------------------------------------------
 A <- inla.spde.make.A(mesh=mesh, 
                       loc=coordinates(xs), 
-                      group=as.integer(factor(xs$Week))) 
+                      group=as.integer(factor(xs$week))) 
 
 ## ----stack---------------------------------------------------------------
-sdat<-inla.stack(tag='stdata',data=list(y=xs$sp),A=list(A,1),effects=list(c(iset,list(intercept=1)),data.frame(w=xs$Typ,week=xs$week,week2=xs$week2,natural=xs$natural))) 
+sdat<-inla.stack(tag='stdata',data=list(y=xs$sp),A=list(A,1),effects=list(c(iset,list(intercept=1)),data.frame(jul=xs$jul,jul2=xs$jul2,natural=xs$natural))) 
 
 ## ----hbeta---------------------------------------------------------------
 
@@ -701,7 +709,7 @@ h.spec <- list(theta=list(prior="pc.cor0", param=c(0.1, NA)))
 #h.spec <- list(theta = list(prior="pc.prec", param=c(1, NA)),
 #               rho = list(prior="pc.cor0", param=c(0.1, NA)))
 
-h.spec <- list(#theta=list(prior='pc.prec', param=c(0.00000000001, 0.00000000005)))#,
+h.spec <- list(#theta=list(prior='pc.prec', param=c(0.5, 0.5)))#,
   rho = list(prior="pc.cor0", param=c(0.5,0.1)))
 
 #h.spec <- list(theta = list(prior = "betacorrelation",param=c(1,3),initial=-1.098))
@@ -711,7 +719,8 @@ h.spec <- list(#theta=list(prior='pc.prec', param=c(0.00000000001, 0.00000000005
 ##inla.setOption(inla.call='remote')
 
 ## ----ft------------------------------------------------------------------
-formulae <- y ~ -1 + intercept + week + week2 + natural + f(i, model=spde, group=i.group,control.group=list(model='ar1', hyper=h.spec)) 
+formulae <- y ~ -1 + intercept + jul + jul2 + natural + f(i, model=spde, group=i.group,control.group=list(model='ar1', hyper=h.spec)) 
+formulae <- y ~ -1 + intercept + f(i, model=spde, group=i.group,control.group=list(model='ar1', hyper=h.spec)) 
 #formulae <- y ~ 0 + w + f(i, model=spde) + f(week,model="rw1")
 #formulae <- y ~ 0 + w + f(i, model=spde, group=i.group,control.group=list(model='exchangeable')) 
 prec.prior <- list(prior='pc.prec', param=c(1, 0.05)) 
@@ -721,7 +730,7 @@ m <- inla(formulae,  data=inla.stack.data(sdat),
           control.fixed=list(expand.factor.strategy='inla'),
           control.inla = list(int.strategy = "eb"),
           num.threads=3,
-          verbose=FALSE,
+          verbose=TRUE,
           family="nbinomial")#"zeroinflatednbinomial1"
 
 ## ----sbeta---------------------------------------------------------------
@@ -743,7 +752,7 @@ for (j in 1:4) {
 #cor(xs$sp, m$summary.linear.predictor$mean[idat])
 
 ## ----projgrid------------------------------------------------------------
-stepsize <- 5*1/1
+stepsize <- 0.5*1/1
 coords<-st_coordinates(st_cast(st_buffer(st_as_sf(xs),10),"MULTIPOINT"))
 nxy <- round(c(diff(range(coords[,1])), diff(range(coords[,2])))/stepsize)
 projgrid <- inla.mesh.projector(mesh, xlim=range(coords[,1]),ylim=range(coords[,2]), dims=nxy,crs=CRS(proj4string(xs)))
@@ -764,7 +773,7 @@ r<-stack(lapply(xmean,function(i){
   raster(nrows=nxy[2], ncols=nxy[1], xmn=min(projgrid$x), xmx=max(projgrid$x), ymn=min(projgrid$y), ymx=max(projgrid$y),crs=CRS(proj4string(xs)),vals=as.vector(i[,ncol(i):1])) ## some crazy ordering in INLA output be careful
   #raster(i)
 }))
-names(r)<-unique(xs$Week)
+names(r)<-unique(xs$week)
 cols<-colo.scale(200,c("steelblue3","orange","red3","darkred","grey20"))
 
 # voir argument panel.number ou packets de layer
@@ -774,10 +783,10 @@ buf<-spPolygons(buf,crs=CRS(proj4string(xs)))
 buf<-gBuffer(buf,width=1)
 r<-mask(r,buf)
 
-xxs<-split(xs,xs$Week)
+xxs<-split(xs,xs$week)
 p.strip<-list(cex=0.65,lines=1,col="black")
 levelplot(r,col.regions=cols,cuts=199,par.strip.text=p.strip,par.settings = list(axis.line = list(col = "grey90"),strip.background = list(col = 'transparent'),strip.border = list(col = 'grey90')),scales = list(col = "black")) +
-  layer(sp.points(xxs[[panel.number()]],col=gray(0,0.5),pch=1,cex=scales:::rescale(c(max(xs$sp),identity(xxs[[panel.number()]]$sp)),to=c(0.2,3))[-1]))+
+  layer(sp.points(xxs[[panel.number()]],col=gray(0,0.5),pch=1,cex=scales:::rescale(c(max(xs$sp),identity(xxs[[panel.number()]]$sp)),to=c(0.2,8))[-1]))+
   layer(sp.points(xxs[[panel.number()]],col=gray(0,0.5),pch=3,cex=0.25))+
   layer(sp.polygons(Q,col=gray(0,0.3)))
 par(mfrow=c(1,1))
