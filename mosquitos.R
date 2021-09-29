@@ -39,7 +39,7 @@ library(doParallel)
 ### first set working directory
 # all files should be in this folder
 setwd("C:/Users/God/Documents/UdeS/Documents/UdeS/Consultation/JAllostry/Doc/GDG_INSPQ/")
-
+load("mosquitos.RData")
 
 ### useful functions for plotting and predictions
 source("https://raw.githubusercontent.com/frousseu/FRutils/master/R/colo.scale.R")
@@ -639,12 +639,12 @@ axis(2,at=1:nlevels(x$id),labels=levels(x$id),las=2,cex.axis=0.35)
 ################################################
 ### space-time simple from spde tutorial
 
-#colSums(xs@data[,5:33])
+d[,lapply(.SD,sum,na.rm=TRUE),by=year,.SD=species][order(year),][,1:6]
 #xs1<-ds[ds$year%in%c("2015"),]
 #xs2<-ds[ds$year%in%c("2016"),]
 #xs1$sp<-log(xs1$A9+1)
 #xs2$sp<-log(xs2$A9+1)
-xs<-ds[ds$year%in%c("2015"),]
+xs<-ds[ds$year%in%c("2005"),]
 #xs2<-xs[xs$db=="pred",][92,]
 o<-over(xs,mappingzone)
 xs<-xs[!is.na(o),]
@@ -774,7 +774,7 @@ r<-stack(lapply(xmean,function(i){
   #raster(i)
 }))
 names(r)<-unique(xs$week)
-cols<-colo.scale(200,c("steelblue3","orange","red3","darkred","grey20"))
+cols<-colo.scale(200,c("steelblue3","orange","red3","darkred"))#,"grey20"))
 
 # voir argument panel.number ou packets de layer
 xsbuff<-st_coordinates(st_cast(st_buffer(st_as_sf(xs),7),"MULTIPOINT"))[,1:2]
@@ -783,10 +783,10 @@ buf<-spPolygons(buf,crs=CRS(proj4string(xs)))
 buf<-gBuffer(buf,width=1)
 r<-mask(r,buf)
 
-xxs<-split(xs,xs$week)
+xxs<-split(xs[!is.na(xs$sp),],xs$week[!is.na(xs$sp)])
 p.strip<-list(cex=0.65,lines=1,col="black")
 levelplot(r,col.regions=cols,cuts=199,par.strip.text=p.strip,par.settings = list(axis.line = list(col = "grey90"),strip.background = list(col = 'transparent'),strip.border = list(col = 'grey90')),scales = list(col = "black")) +
-  layer(sp.points(xxs[[panel.number()]],col=gray(0,0.5),pch=1,cex=scales:::rescale(c(max(xs$sp),identity(xxs[[panel.number()]]$sp)),to=c(0.2,8))[-1]))+
+  layer(sp.points(xxs[[panel.number()]],col=gray(0,0.5),pch=1,cex=scales:::rescale(c(max(xs$sp),identity(xxs[[panel.number()]]$sp)),to=c(0.3,5))[-1]))+
   layer(sp.points(xxs[[panel.number()]],col=gray(0,0.5),pch=3,cex=0.25))+
   layer(sp.polygons(Q,col=gray(0,0.3)))
 par(mfrow=c(1,1))
@@ -1120,4 +1120,10 @@ xx<-x[,.(n=.N,mean=mean(diff)),by="cut"][order(cut)][1:(5000/blocks),]
 xx<-droplevels(xx)
 plot(as.integer(xx$cut)+0.5,xx$mean,xaxt="n",type="b",cex=scales::rescale(xx$n,to=c(0.1,5)))
 axis(1,at=1:nlevels(xx$cut),label=as.integer(sapply(strsplit(gsub("\\(|\\]","",levels(xx$cut)),","),"[",1)),las=2,cex.axis=0.5)
+
+
+
+
+
+
 
