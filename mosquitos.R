@@ -38,8 +38,9 @@ library(doParallel)
 
 ### first set working directory
 # all files should be in this folder
-setwd("C:/Users/God/Documents/UdeS/Documents/UdeS/Consultation/JAllostry/Doc/GDG_INSPQ/")
-load("mosquitos.RData")
+path<-"C:/Users/God/Documents/mosquitos/data"
+setwd(path)
+#load("mosquitos.RData")
 
 ### useful functions for plotting and predictions
 source("https://raw.githubusercontent.com/frousseu/FRutils/master/R/colo.scale.R")
@@ -262,6 +263,8 @@ d[d$date=="2011-07-12" & d$id=="TER001",]
 
 ### add info
 d$jul<-as.integer(format(as.Date(d$date),"%j"))
+#d$jul<-d$jul/100
+#d$jul2<-d$jul^2
 d$year<-substr(d$date,1,4)
 d$week<-format(as.Date(d$date),"%Y_W%V")
 #d$year_week<-paste(d$year,d$week,sep="_")
@@ -327,13 +330,13 @@ plot(pgrid)
 plot(g,add=TRUE,cex=0.3)
 
 ee<-expand.grid(week=sort(unique(ds$week)))
-ee$id<-"pred"
+ee$id<-"map"
 ee$year<-as.integer(substr(ee$week,1,4))
 ee$date<-as.Date(ee$week,"%Y_W%V")
 ee$jul<-as.integer(format(ee$date,"%j"))
 ee$date<-as.character(ee$date)
 ee$nights<-1
-ee$db<-"pred"
+ee$db<-"map"
 eesp<-as.data.frame(matrix(rep(NA,nrow(ee)*length(species)),ncol=length(species)))
 names(eesp)<-species
 ee<-cbind(ee,eesp)
@@ -345,70 +348,38 @@ coo$lat<-coo$latitude
 info<-ee[rep(1:nrow(ee),each=nrow(coo)),]
 coords<-coo[rep(1:nrow(coo),times=nrow(ee)),]
 
-pred<-cbind(info,coords)
-coordinates(pred)<-~lon+lat
-proj4string(pred)<-CRS(proj4string(ds))
+map<-cbind(info,coords)
+coordinates(map)<-~lon+lat
+proj4string(map)<-CRS(proj4string(ds))
 
-setdiff(names(ds),names(pred))
-setdiff(names(pred),names(ds))
+setdiff(names(ds),names(map))
+setdiff(names(map),names(ds))
 
-pred<-pred[,names(ds)]
+map<-map[,names(ds)]
 
-ds<-rbind(ds,pred)
+ds<-rbind(ds,map)
 
+# remove what is not in the mapping zone
+o<-over(ds,mappingzone)
+ds<-ds[!is.na(o),]
 
-
-################
-### old data ###
-
-#d<-as.data.frame(read_excel("C:/Users/God/Documents/UdeS/Documents/UdeS/Consultation/JAllostry/Doc/BD.xlsx"))
-#d$Long<-d$LongdecSatScan
-#d$Lat<-d$LatdecSatScan
-#d$Long<-d$Long+0.3
-#d$Lat<-d$Lat-0.2
-#d$Site<-ifelse(nchar(d$Site)==6,sapply(strsplit(d$Site,"(?<=.{3})", perl = TRUE),paste,collapse=" "),d$Site)
-#unique(d$Site)
-
-#d$date<-as.Date(d$Day)
-#d$date<-as.Date(paste0(d$Annee,"-01-01"))+d$Week*7
-#d$jul<-as.integer(format(d$date,"%j"))
-#d$date<-as.character(d$date)
-#d$year<-d$Annee
-
-#d<-d[order(d$Site,d$Annee_Week),]
-
-#l<-split(d,d$year)
-
-#ds<-d
-#coordinates(ds)<-~Long+Lat
-#proj4string(ds)<-"+init=epsg:4326"
-
-#prj<-"+proj=utm +zone=18 +datum=WGS84 +units=km +no_defs +ellps=WGS84 +towgs84=0,0,0"
-#ds<-spTransform(ds,CRS(prj))
-#ds<-ds[ds$Annee%in%c(2014:2016),][1:500,]
-
-#mapview(ds,zcol="Site")
-
-##############################
-### epiweeks #################
-
-### temp stuff
 
 ##############################
 ### weather ##################
 
+### code to download daymet data
 #rasterOptions(chunksize=1e+09,maxmemory=5e+10)
-
 #download_daymet_tiles(#location = c(46.75,-77.5,45,-70),
-#  location = st_bbox(st_transform(st_as_sf(ds),crs=4326))[c(4,1,2,3)],
+##  location = st_bbox(st_transform(st_as_sf(ds),crs=4326))[c(4,1,2,3)],
+#  location=c(ymax=45.9022729397129,xmin=-74.4357158151628,ymin=45.1889865783487,xmax=-72.8946830482002), # topleft and bottom right coordinates of ds object
 #  start = 2003,
 #  end = 2016,
 #  param = "tmax",
-#  path = "C:/Users/God/Downloads/daymet")
+#  path = file.path(path,"daymet"))
 
-### faster to stack rasters, summarize them to weekly values and then merge them, not merge and then summarize
+# faster to stack rasters, summarize them to weekly values and then merge them, not merge and then summarize
 
-l<-list.files("C:/Users/God/Downloads/daymet",full=TRUE,pattern="_2015_")
+l<-list.files(file.path(path,"daymet"),full=TRUE,pattern="_2015_")
 g<-lapply(l,function(i){
   r<-stack(i)[[1]]
   r<-setValues(r,ifelse(is.na(values(r)),NA,as.integer(gsub(".nc","",tail(strsplit(i,"_")[[1]],1)))))
@@ -427,7 +398,7 @@ e<-extract(g,dsbuffer)
 dsbuffer$tile<-e
 dsbuffer$year_tile<-paste(dsbuffer$year,dsbuffer$tile,sep="_")
 
-lf<-list.files("C:/Users/God/Downloads/daymet",full=TRUE)
+lf<-list.files(file.path(path,"daymet"),full=TRUE)
 lf<-lf[order(lf)]
 ids<-do.call("rbind",strsplit(lf,"_"))
 o<-order(ids[,3],ids[,2])
@@ -481,7 +452,7 @@ ds<-cbind(ds,vals)
 ##############################
 ### landcover ################
 
-l<-list.files("C:/Users/God/Documents/mosquitos/data/LULC/LULC/",pattern=".tif",full.names=TRUE)
+l<-list.files(file.path(path,"LULC/LULC/"),pattern=".tif",full.names=TRUE)
 l<-l[substr(l,nchar(l)-3,nchar(l))==".tif"]
 
 r<-stack(l)
@@ -506,7 +477,7 @@ ld<-setDT(l)
 pcov<-dcast(ld,loc~classn,value.var="area",fill=0)
 table(rowSums(pcov[,-1])) # should expect only 1's
 
-lccnames<-as.data.frame(read_excel("C:/Users/God/Documents/mosquitos/data/0_ListeReclassification.xlsx",sheet="Reclassification",range="C52:D64"))
+lccnames<-as.data.frame(read_excel(file.path(path,"0_ListeReclassification.xlsx"),sheet="Reclassification",range="C52:D64"))
 names(lccnames)<-c("classn","orig")
 lccnames<-cbind(lccnames,class=c("clouds","water","barren","urban","wet","pond","marsh","swamp","crop","pasture","shrub","forest"))
 names(pcov)[-1]<-lccnames$class[match(names(pcov)[-1],lccnames$classn)]
@@ -519,109 +490,23 @@ ds$natural<-ds$shrub+ds$forest
 
 xlim<-bbox(mappingzone)[1,]*1000
 ylim<-bbox(mappingzone)[2,]*1000
-
-#rlcc<-ratify(r)
-
 #arg <- list(at=rat$ID, labels=rat$class)
 cols<-c("gray","skyblue","grey20","grey50","brown","skyblue","brown","brown","lightgoldenrod","lightgoldenrod","green","forestgreen")
 par(mar=c(0,0,0,8))
 plot(r[[1]],col=cols,breaks=c(0,lccnames$classn),axis.args=arg,xlim=xlim,ylim=ylim,zlim=c(0,220),legend=FALSE,legend.width=1,legend.shrink=1.25,axes=TRUE,bty="n")
 legend(x=par("usr")[2],y=par("usr")[4],legend=paste(lccnames$class,lccnames$classn),fill=cols,bty="n",border=NA,cex=1.2,xpd=TRUE)
-plot(st_geometry(st_buffer(st_transform(st_as_sf(ds[ds$id!="pred",]),proj4string(r)),1000)),add=TRUE)
+plot(st_geometry(st_buffer(st_transform(st_as_sf(ds[ds$id!="map",]),proj4string(r)),1000)),add=TRUE)
 #loc<-locator()
 #plot(r[[1]],col=cols,breaks=c(0,lccnames$classn),axis.args=arg,xlim=range(loc$x),ylim=range(loc$y),zlim=c(0,220),legend=FALSE,legend.width=1,legend.shrink=1.25,axes=TRUE)
 #plot(st_geometry(st_buffer(st_transform(st_as_sf(ds),proj4string(r)),1000)),add=TRUE)
 #legend(x=par("usr")[2],y=par("usr")[4],legend=paste(lccnames$class,lccnames$classn),fill=cols,bty="n",border=NA,cex=1.2,xpd=TRUE)
 
-
-
-###################################################
-### lcc2000 #######################################
-
-### Old landcover from OpenCanada circa 2000
-# https://open.canada.ca/data/en/dataset/97126362-5a85-4fe0-9dc2-915464cfdbb7
-
-#l<-list.files("C:/Users/God/Documents/UdeS/Documents/UdeS/Consultation/JAllostry/Doc/lcc2000",pattern=".shp",full.names=TRUE)
-#s<-lapply(l,st_read)
-#s<-do.call("rbind",s)
-#ss<-st_transform(s,crs=st_crs(st_as_sf(ds)))
-
-#cla<-as.data.frame(read_excel("C:/Users/God/Documents/UdeS/Documents/UdeS/Consultation/JAllostry/Doc/lcc2000class.xlsx"))
-
-#clan<-sapply(strsplit(cla[,1],"-"),"[",1)
-#cla<-strsplit(cla[,1],"-") %>% 
-#  sapply("[",-1) %>% 
-#  sapply(paste0,collapse="") %>% 
-#  sapply(function(i){gsub('[[:digit:]]+', '', i)}) %>% 
-#  sapply(function(i){gsub("  "," ",i)}) %>% 
-#  sapply(function(i){gsub("  ","",i)}) %>% 
-#  unname
-
-
-#cla[grep("Conifères|Coniférien|Mixte|Feuillu|Forêt",cla)]<-"Natural"
-#cla[grep("Cultures|Prairies|agricoles",cla)]<-"Agriculture"
-#cla[grep("humide",cla)]<-"Wet"
-#cla[grep("Arbustes|arbustes|herbacées",cla)]<-"Natural"
-#cla[grep("découvert|Stérile|Bryo",cla)]<-"Exposed"
-#cla[grep("développées",cla)]<-"Urban"
-#cla[grep("Ombre",cla)]<-NA
-
-#s$cover<-factor(cla[match(s$COVTYPE,clan)])
-
-#lcc<-levels(s$cover)
-
-#r<-raster(nrow=2000,ncol=3000,ext=extent(s))
-
-#rx<-fasterize(s,r,field="cover",fun="max")
-#rn<-fasterize(s,r,field="cover",fun="min")
-
-#rlcc<-ratify(rx)
-
-#levels(s$cover)
-#hn<-levels(rlcc)[[1]][,1]
-#cols<-c("lightgoldenrod","skyblue","grey30","forestgreen","grey60","brown")
-#par(mar=c(0,0,0,0))
-#plot(rlcc,legend=FALSE,col=cols)
-#legend("bottomright",legend=levels(s$cover),fill=cols,bty="n",border=NA,cex=2)
-#points(ds,col="red",pch=16,cex=0.8)
-#dbuffer<-1
-#buffer<-st_transform(st_buffer(st_as_sf(ds),dist=dbuffer),4326)
-#plot(st_geometry(buffer),add=TRUE)
-
-#vrlcc<-velox(rlcc)
-#l<-vrlcc$extract(buffer)
-#l<-lapply(l,function(i){
-#  x<-i[,1]
-#  x<-x[!is.na(x)]
-#  sum(x==4L)/length(x)
-#})
-
-#ds$natural<-unlist(l)
-
-#grid<-st_make_grid(rlcc,cellsize=c(0.0200,0.0200),what="centers")
-#pr<-raster(SpatialGrid((points2grid(as_Spatial(grid)))))
-#g<-st_buffer(st_as_sf(xyFromCell(pr,1:ncell(pr),spatial=TRUE)),dist=0.01)
-#l<-v$extract(g)
-
-#l<-lapply(l,function(i){
-#  x<-i[,1]
-#  x<-x[!is.na(x)]
-#  sum(x==4L)/length(x)
-#})
-#pr<-setValues(pr,unlist(l))
-#plot(pr,col=rev(viridis(100)))
-
-#par(mar=c(0,0,0,0))
-#plot(st_geometry(st_as_sfc(st_bbox(buffer))))
-#plot(rlcc,legend=FALSE,col=cols,add=TRUE)
-#points(ds,col="red",pch=16,cex=0.8)
-#plot(st_geometry(buffer),add=TRUE)
-#legend("bottomright",legend=levels(s$cover),fill=cols,bty="n",cex=2,bg=gray(1,0.5))
-
 rev(sort(sapply(ls(),function(i){object.size(get(i))})))
 
 rm(e,lf,dsbuffer,can);gc();gc()
 
+### save the loaded data in a session
+#save.image("mosquitos.RData")
 
 ###############################################
 ### weeks #####################################
@@ -636,41 +521,39 @@ axis(1,at=1:nlevels(x$variable),labels=levels(x$variable),las=2,cex.axis=0.5,srt
 axis(2,at=1:nlevels(x$id),labels=levels(x$id),las=2,cex.axis=0.35)
 
 
-################################################
-### space-time simple from spde tutorial
+################################################################
+### Models #####################################################
+################################################################
 
+#load("mosquitos.RData")
+
+# temp manips
+
+ds$jul<-ds$jul/100
+ds$jul2<-ds$jul^2
+ds$db<-gsub("pred","map",ds$db)
+
+
+# summary of most abundant species per year
 d[,lapply(.SD,sum,na.rm=TRUE),by=year,.SD=species][order(year),][,1:6]
-#xs1<-ds[ds$year%in%c("2015"),]
-#xs2<-ds[ds$year%in%c("2016"),]
-#xs1$sp<-log(xs1$A9+1)
-#xs2$sp<-log(xs2$A9+1)
-xs<-ds[ds$year%in%c("2005"),]
-#xs2<-xs[xs$db=="pred",][92,]
-o<-over(xs,mappingzone)
-xs<-xs[!is.na(o),]
-#xs<-xs[xs$db!="pred",]
 
-#plot(mesh,asp=1)
-#plot(xs,add=TRUE)
-#xs$sp<-log(xs$A29+1)
-sp<-names(xs)[grep("CPR_",names(xs))]
-sp
+year<-2015
+
+xs<-ds[ds$year%in%year,]
+sp<-names(xs)[grep("VEX_",names(xs))]
 xs$sp<-xs@data[,sp]
-#xs<-rbind(xs1,xs2)
-#xs<-xs1
-#xs$Week<-sample(xs$Week)
-#xs$sp<-xs$A29
 xs<-xs[order(xs$week),]
-#xs$Week<-paste(xs$Annee,xs$Week,sep="_")
-#xs$week<-as.integer(substr(xs$Week,6,7))
-xs$jul<-xs$jul/100
-xs$jul2<-xs$jul^2
+#xs<-xs[xs$week%in%paste0(year,"_W",25:35),]
 
-domain <- inla.nonconvex.hull(coordinates(xs),convex=-0.075, resolution = c(100, 100))
-mesh<-inla.mesh.2d(loc.domain=coordinates(xs),max.edge=c(5,10),offset=c(5,5),cutoff=5,boundary=domain,crs=CRS(proj4string(xs)))
+# build mesh
+domain <- inla.nonconvex.hull(coordinates(ds),convex=-0.075, resolution = c(100, 100))
+mesh<-inla.mesh.2d(loc.domain=coordinates(ds),max.edge=c(5,10),offset=c(5,5),cutoff=5,boundary=domain,crs=CRS(proj4string(xs)))
 plot(mesh,asp=1)
 plot(xs,add=TRUE,pch=1,col="red")
 plot(mappingzone,add=TRUE)
+
+xsmap<-xs[xs$db=="map",]
+xs<-xs[xs$db!="map",]
 
 ## ----spde----------------------------------------------------------------
 spde <- inla.spde2.pcmatern(
@@ -678,33 +561,8 @@ spde <- inla.spde2.pcmatern(
   prior.range=c(5, 0.01), ### P(practic.range<0.05)=0.01
   prior.sigma=c(4, 0.5)) ### P(sigma>1)=0.01
 
-## ----rfindex-------------------------------------------------------------
-k<-length(unique(xs$week))
-iset <- inla.spde.make.index('i', n.spde=spde$n.spde, n.group=k)
-
-## ----apred---------------------------------------------------------------
-A <- inla.spde.make.A(mesh=mesh, 
-                      loc=coordinates(xs), 
-                      group=as.integer(factor(xs$week))) 
-
-## ----stack---------------------------------------------------------------
-sdat<-inla.stack(tag='stdata',data=list(y=xs$sp),A=list(A,1),effects=list(c(iset,list(intercept=1)),data.frame(jul=xs$jul,jul2=xs$jul2,natural=xs$natural))) 
-
-## ----hbeta---------------------------------------------------------------
-
-co<-seq(-0.99,0.99,by=0.01)
-u<-0
-alpha<-0.00005
-par(mfrow=c(1,3))
-hist(inla.pc.rcor0(10000,u=mu,alpha=alpha))
-dens<-inla.pc.dcor0(co,u=mu,alpha=alpha)
-plot(co,dens,type="l",ylim=c(0,max(dens,na.rm=TRUE)))
-sig<-inla.pc.rprec(10000,u=1,alpha=0.05)
-hist(1/sig)
-table(sig>1)
-
-
-h.spec <- list(theta=list(prior="pc.cor0", param=c(0.1, NA)))
+### priors -------------------------------------------------
+h.spec <- list(theta=list(prior="pc.cor0", param=c(0.1, 0.05)))
 #h.spec <- list(theta=list(prior="pc.prec", param=c(0.5,0.5)), rho=list(prior="pc.cor1", param=c(0.9,0.9)))
 #h.spec <- list(theta = list(prior="pc.prec", param=c(1, NA)),
 #               rho = list(prior="pc.cor0", param=c(0.1, NA)))
@@ -712,20 +570,99 @@ h.spec <- list(theta=list(prior="pc.cor0", param=c(0.1, NA)))
 h.spec <- list(#theta=list(prior='pc.prec', param=c(0.5, 0.5)))#,
   rho = list(prior="pc.cor0", param=c(0.5,0.1)))
 
+prec.prior <- list(prior='pc.prec', param=c(1, 0.05))
 #h.spec <- list(theta = list(prior = "betacorrelation",param=c(1,3),initial=-1.098))
 #hist(rbeta(10000,1,3))
+
+## show priors on ar1
+co<-seq(-0.99,0.99,by=0.01)
+mu<-0.2
+alpha<-0.1
+par(mfrow=c(1,3))
+hist(inla.pc.rcor0(10000,u=mu,alpha=alpha))
+dens<-inla.pc.dcor0(co,u=mu,alpha=alpha)
+plot(co,dens,type="l",ylim=c(0,max(dens,na.rm=TRUE)))
+sig<-inla.pc.rprec(10000,u=1,alpha=0.05)
+hist(1/sig)
+
+
 
 ## ----remote,echo=FALSE---------------------------------------------------
 ##inla.setOption(inla.call='remote')
 
-## ----ft------------------------------------------------------------------
-formulae <- y ~ -1 + intercept + jul + jul2 + natural + f(i, model=spde, group=i.group,control.group=list(model='ar1', hyper=h.spec)) 
-formulae <- y ~ -1 + intercept + f(i, model=spde, group=i.group,control.group=list(model='ar1', hyper=h.spec)) 
+## models
+model <- y ~ -1 + intercept + jul + jul2 + natural + f(i, model=spde, group=i.group,control.group=list(model='ar1', hyper=h.spec)) 
+#model <- y ~ -1 + intercept + f(i, model=spde, group=i.group,control.group=list(model='ar1', hyper=h.spec)) 
 #formulae <- y ~ 0 + w + f(i, model=spde) + f(week,model="rw1")
 #formulae <- y ~ 0 + w + f(i, model=spde, group=i.group,control.group=list(model='exchangeable')) 
-prec.prior <- list(prior='pc.prec', param=c(1, 0.05)) 
-m <- inla(formulae,  data=inla.stack.data(sdat), 
-          control.predictor=list(compute=TRUE, A=inla.stack.A(sdat),link=1), 
+ 
+
+## ----rfindex-------------------------------------------------------------
+k<-length(unique(xs$week))
+iset<-inla.spde.make.index('i',n.spde=spde$n.spde,n.group=k)
+
+
+### build newdata with variable values to submit
+n<-10
+v<-setdiff(all.vars(model),c("y","i","intercept","spde","i.group","h.spec"))
+v2<-v[grep("2",v)]
+v1<-setdiff(v,v2)
+lp<-newdata(x=xs@data[,v1,drop=FALSE],v=v1,n=n,fun=mean,list=FALSE)
+if(length(v2)){
+  lp<-lapply(lp,function(i){
+    a<-as.data.frame(lapply(i[,gsub("2","",v2),drop=FALSE],"^",2))
+    names(a)<-v2
+    res<-cbind(i,a)
+    res[,order(names(res))]
+  })
+}
+#model<-formula(paste("y~-1+",paste(v,collapse="+")))
+#lp<-lapply(lp,function(i){mmatrix(model,i)})
+#lpmed<-mmatrix(model,newdata(x=xs[,v,drop=FALSE],v=v,n=1,fun=median,list=FALSE)[[1]][rep(1,length(g)),])[[1]]
+
+
+## ----apred---------------------------------------------------------------
+Aest<-inla.spde.make.A(mesh=mesh,loc=coordinates(xs),group=as.integer(factor(xs$week))) 
+Amap<-inla.spde.make.A(mesh=mesh,loc=coordinates(xsmap),group=as.integer(factor(xsmap$week))) 
+#Apre<-inla.spde.make.A(mesh=mesh,loc=matrix(c(600,5050),ncol=2)[rep(1,n),,drop=FALSE],group=rep(12,n))
+
+#Apre<-inla.spde.make.A(mesh=mesh,loc=coordinates(xsmap),group=as.integer(factor(xsmap$week)))
+
+## ----stack---------------------------------------------------------------
+stackest<-inla.stack(tag='est',data=list(y=xs$sp),A=list(Aest,1),effects=list(c(iset,list(intercept=1)),xs@data)) 
+stackmap<-inla.stack(tag='map',data=list(y=xsmap$sp),A=list(Amap,1),effects=list(c(iset,list(intercept=1)),xsmap@data)) 
+#stackpre<-inla.stack(tag='pre',data=list(y=xs$sp),A=list(Aest,1),effects=list(c(iset,list(intercept=1)),xs@data)) 
+stackfull<-inla.stack(stackest,stackmap)
+
+### add a stack for each focus variable
+fixgroup<-ceiling(length(sort(unique(xs$week)))/2) # which group to use for var pred
+for(i in seq_along(v1)){
+  le<-nrow(lp[[v1[i]]])
+  if(le!=n){
+    #AA<-inla.spde.make.A(mesh=mesh,loc=matrix(c(0.3,0.5),ncol=2)[rep(1,le),,drop=FALSE]) # for categorical variables
+    AA<-inla.spde.make.A(mesh=mesh,loc=matrix(c(600,5050),ncol=2)[rep(1,n),,drop=FALSE],group=rep(fixgroup,n))
+  }else{
+    #AA<-Apn # for numerical variables
+    AA<-inla.spde.make.A(mesh=mesh,loc=matrix(c(600,5050),ncol=2)[rep(1,n),,drop=FALSE],group=rep(fixgroup,n))
+  }
+  stack<-inla.stack(tag=v1[i],data=list(y=NA),A=list(AA,1),effects=list(c(lapply(iset,"[",iset$i.group==fixgroup),list(intercept=1)),lp[[v1[i]]]))     
+  stackfull<-inla.stack(stackfull,stack)
+}
+
+#stackfull<-inla.stack(stackest)
+
+### extract index for each stack
+index.est<-inla.stack.index(stackfull,tag="est")$data
+index.map<-inla.stack.index(stackfull,tag="map")$data
+index<-list(est=index.est,map=index.map)
+for(i in seq_along(v1)){
+  index<-c(index,list(inla.stack.index(stackfull,tag=v1[i])$data))
+}  
+names(index)[3:length(index)]<-v1
+
+
+m <- inla(model,  data=inla.stack.data(stackfull), 
+          control.predictor=list(compute=FALSE, A=inla.stack.A(stackfull),link=1), 
           #control.family=list(hyper=list(theta=prec.prior)), 
           control.fixed=list(expand.factor.strategy='inla'),
           control.inla = list(int.strategy = "eb"),
@@ -881,7 +818,7 @@ vmap<-cbind(vmap,pgrid[rep(1:nrow(pgrid),length.out=nrow(vmap)),])
 
 ########################################################
 ### bind the data stack for the estimate and for the map
-stack.est<-inla.stack(data=list(y=xs$sp),A=list(A,1),effects=list(c(iset,list(intercept=1)),data.frame(xs@data[,v])),tag="est")
+stack.est<-inla.stack(data=list(y=xs$sp),A=list(A,1),effects=list(c(iset,list(intercept=1)),data.frame(xs@data[xs$db!="pred",v])),tag="est")
 stack.map<-inla.stack(data=list(y=NA),A=list(Ap,1),effects=list(c(iset,list(intercept=1)),vmap),tag="map")
 #stack.pred<-inla.stack(data=list(y=NA),A=list(Apn,1),effects=list(c(lapply(iset,"[",iset$i.group==12),list(intercept=1)),vpred),tag="pred")
 #full.stack<-inla.stack(stack.est,stack.map,stack.pred)
@@ -1008,7 +945,7 @@ for(i in seq_along(v1)){
   #p[]<-lapply(p,transI)
   dat<-data.frame(lp[[v1[i]]])
   if(nrow(p)==n){
-    plot(dat[[v1[i]]],p[,2],type="l",ylim=c(0,max(c(max(p[,3]),max(xs$sp)))),xlab=v1[i],font=2,ylab="",lty=1,yaxt="n")
+    plot(dat[[v1[i]]],p[,2],type="l",ylim=c(0,min(c(max(p[,3]),max(xs$sp)))),xlab=v1[i],font=2,ylab="",lty=1,yaxt="n")
     lines(dat[[v1[i]]],p[,1],lty=3,lwd=1)
     lines(dat[[v1[i]]],p[,3],lty=3,lwd=1)
     points(xs@data[,v1[i]],xs$sp,pch=16,col=gray(0,0.07))
@@ -1124,6 +1061,9 @@ axis(1,at=1:nlevels(xx$cut),label=as.integer(sapply(strsplit(gsub("\\(|\\]","",l
 
 
 
-
+plot(mesh,asp=1)
+plot(mappingzone,add=TRUE)
+plot(ds,add=TRUE)
+plot(xsmap,add=TRUE)
 
 
