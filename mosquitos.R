@@ -323,7 +323,7 @@ plot(ds,add=TRUE,pch=1)
 # this allows to make the lcc/daymet extractions in a single step
 # and INLA does predictions for NA response values
 
-pgrid<-raster(ext=extent(mappingzone),res=c(10,10),crs=CRS(proj4string(mappingzone)))
+pgrid<-raster(ext=extent(mappingzone),res=c(5,5),crs=CRS(proj4string(mappingzone)))
 pgrid<-setValues(pgrid,1)
 g<-xyFromCell(pgrid,1:ncell(pgrid),spatial=TRUE)
 plot(pgrid)
@@ -383,6 +383,8 @@ l<-list.files(file.path(path,"daymet"),full=TRUE,pattern="_2015_")
 g<-lapply(l,function(i){
   r<-stack(i)[[1]]
   r<-setValues(r,ifelse(is.na(values(r)),NA,as.integer(gsub(".nc","",tail(strsplit(i,"_")[[1]],1)))))
+  #r2<-aggregate(r,fac=10,fun=mean)
+  #r<-resample(r2,r)
   r
 })
 bb<-lapply(g,function(i){
@@ -416,7 +418,7 @@ ptemps<-c(1,15,90) # number of days over which to average weather values
 l<-foreach(i=seq_along(lf),.packages=c("raster","sf")) %do% {  
   w<-which(dsbuffer$year_tile==names(lf)[i])
   if(any(w)){
-    e<-extract(lf[[i]],dsbuffer[w,])  
+    e<-extract(lf[[i]],dsbuffer[w,],method="simple") # some cells with NA so this takes neighbouring cells  
     ll<-lapply(seq_along(w),function(j){
       m<-match(dsbuffer$date[w[j]],gsub("\\.","-",gsub("X","",dimnames(e)[[2]])))
       a<-sapply(ptemps,function(k){
@@ -428,6 +430,7 @@ l<-foreach(i=seq_along(lf),.packages=c("raster","sf")) %do% {
     #plot(lf[[i]][[1]])
     #plot(st_geometry(dsbuffer[w,]),add=TRUE)
     dimnames(ll)[[1]]<-w
+    cat("\r",paste(i,length(lf),sep=" / "))
     ll
   }
 }
@@ -437,6 +440,29 @@ vals<-vals[order(as.integer(dimnames(vals)[[1]])),]
 vals<-as.data.frame(vals)
 names(vals)<-paste0("tmax",ptemps)
 ds<-cbind(ds,vals)
+
+
+plot(st_geometry(st_transform(st_as_sf(ds),crs=crs(lf[[1]]))))
+plot(st_geometry(st_transform(st_as_sf(Q),crs=crs(lf[[1]]))),axes=TRUE,add=TRUE)
+lapply(1:length(lf),function(i){
+  plot(lf[[i]][[1]],legend=FALSE,add=F,zlim=c(-15,5))
+  text(colMeans(coordinates(lf[[i]]))[1],colMeans(coordinates(lf[[i]]))[2],i,cex=5)
+  plot(st_geometry(st_transform(st_as_sf(ds[!1:nrow(ds)%in%as.integer(dimnames(vals)[[1]]),]),crs=crs(lf[[1]]))),add=TRUE)
+  Sys.sleep(1)
+})
+plot(lf[[5]][[6]],add=TRUE,legend=FALSE)
+plot(st_geometry(st_transform(st_as_sf(ds),crs=crs(lf[[1]]))),add=TRUE)
+par(mfrow=c(1,2))
+test<-lf[[8]]
+plot(test,zlim=c(-10,0))
+test<-disaggregate(test,fact=2,method="bilinear")
+plot(test,zlim=c(-10,0))
+par(mfrow=c(1,1))
+
+
+plot(ds)
+plot(ds[!1:nrow(ds)%in%as.integer(dimnames(vals)[[1]]),],add=TRUE,col="red",pch=1,lwd=3)
+plot(st_geometry(st_transform(st_as_sf(ds[!1:nrow(ds)%in%as.integer(dimnames(vals)[[1]]),]),crs=crs(lf[[1]]))),add=TRUE)
 
 
 #e<-exact_extract(weather,buff)
@@ -508,8 +534,9 @@ rm(e,lf,dsbuffer,can);gc();gc()
 ### save the loaded data in a session
 #save.image("mosquitos.RData")
 
-###############################################
-### weeks #####################################
+################################################################
+### visualize trapping weeks ###################################
+
 d$pch<-15
 x<-dcast(unique(d[,c("id","week","pch")]),id~week,value.var="pch")
 x<-melt(x,id=c("id","weeks"))
@@ -529,9 +556,9 @@ axis(2,at=1:nlevels(x$id),labels=levels(x$id),las=2,cex.axis=0.35)
 
 # temp manips
 
-ds$jul<-ds$jul/100
-ds$jul2<-ds$jul^2
-ds$db<-gsub("pred","map",ds$db)
+#ds$jul<-ds$jul/100
+#ds$jul2<-ds$jul^2
+#ds$db<-gsub("pred","map",ds$db)
 
 
 # summary of most abundant species per year
@@ -544,10 +571,12 @@ sp<-names(xs)[grep("VEX_",names(xs))]
 xs$sp<-xs@data[,sp]
 xs<-xs[order(xs$week),]
 #xs<-xs[xs$week%in%paste0(year,"_W",25:35),]
+xs<-xs[substr(xs$week,7,8)%in%23:39,]
 
 # build mesh
+edge<-4
 domain <- inla.nonconvex.hull(coordinates(ds),convex=-0.075, resolution = c(100, 100))
-mesh<-inla.mesh.2d(loc.domain=coordinates(ds),max.edge=c(5,10),offset=c(5,5),cutoff=5,boundary=domain,crs=CRS(proj4string(xs)))
+mesh<-inla.mesh.2d(loc.domain=coordinates(ds),max.edge=c(edge,2*edge),offset=c(edge,edge),cutoff=edge,boundary=domain,crs=CRS(proj4string(xs)))
 plot(mesh,asp=1)
 plot(xs,add=TRUE,pch=1,col="red")
 plot(mappingzone,add=TRUE)
@@ -555,20 +584,26 @@ plot(mappingzone,add=TRUE)
 xsmap<-xs[xs$db=="map",]
 xs<-xs[xs$db!="map",]
 
+### restrict prediction to a given set of weeks/years
+keep<-expand.grid(year=year,week=32)
+keep<-sort(sapply(1:nrow(keep),function(i){paste(keep$year[i],keep$week[i],sep="_W")}))
+xsmap<-xsmap[xsmap$week%in%keep,]
+
+
 ## ----spde----------------------------------------------------------------
 spde <- inla.spde2.pcmatern(
   mesh=mesh, alpha=2, ### mesh and smoothness parameter
+  constr = TRUE, # not exactly sure what this does
   prior.range=c(5, 0.01), ### P(practic.range<0.05)=0.01
   prior.sigma=c(4, 0.5)) ### P(sigma>1)=0.01
 
 ### priors -------------------------------------------------
-h.spec <- list(theta=list(prior="pc.cor0", param=c(0.1, 0.05)))
 #h.spec <- list(theta=list(prior="pc.prec", param=c(0.5,0.5)), rho=list(prior="pc.cor1", param=c(0.9,0.9)))
 #h.spec <- list(theta = list(prior="pc.prec", param=c(1, NA)),
 #               rho = list(prior="pc.cor0", param=c(0.1, NA)))
 
 h.spec <- list(#theta=list(prior='pc.prec', param=c(0.5, 0.5)))#,
-  rho = list(prior="pc.cor0", param=c(0.5,0.1)))
+  rho = list(prior="pc.cor0", param=c(0.7,0.5)))
 
 prec.prior <- list(prior='pc.prec', param=c(1, 0.05))
 #h.spec <- list(theta = list(prior = "betacorrelation",param=c(1,3),initial=-1.098))
@@ -595,16 +630,15 @@ model <- y ~ -1 + intercept + jul + jul2 + natural + f(i, model=spde, group=i.gr
 #model <- y ~ -1 + intercept + f(i, model=spde, group=i.group,control.group=list(model='ar1', hyper=h.spec)) 
 #formulae <- y ~ 0 + w + f(i, model=spde) + f(week,model="rw1")
 #formulae <- y ~ 0 + w + f(i, model=spde, group=i.group,control.group=list(model='exchangeable')) 
- 
+v<-setdiff(all.vars(model),c("y","i","intercept","spde","i.group","h.spec")) 
 
-## ----rfindex-------------------------------------------------------------
-k<-length(unique(xs$week))
-iset<-inla.spde.make.index('i',n.spde=spde$n.spde,n.group=k)
-
+## priors on fixed effects
+vals<-list(intercept=1/5^2,default=1/30^2)
+control.fixed<-list(prec=vals,mean=list(intercept=-20,default=0),expand.factor.strategy = "inla")
 
 ### build newdata with variable values to submit
-n<-10
-v<-setdiff(all.vars(model),c("y","i","intercept","spde","i.group","h.spec"))
+n<-50
+
 v2<-v[grep("2",v)]
 v1<-setdiff(v,v2)
 lp<-newdata(x=xs@data[,v1,drop=FALSE],v=v1,n=n,fun=mean,list=FALSE)
@@ -622,15 +656,25 @@ if(length(v2)){
 
 
 ## ----apred---------------------------------------------------------------
+
+## ----rfindex-------------------------------------------------------------
+k<-length(unique(xs$week))
+iset<-inla.spde.make.index('i',n.spde=spde$n.spde,n.group=k)
+
+gs<-sort(unique(xs$week))
+gs<-match(xsmap$week,gs)
+
 Aest<-inla.spde.make.A(mesh=mesh,loc=coordinates(xs),group=as.integer(factor(xs$week))) 
-Amap<-inla.spde.make.A(mesh=mesh,loc=coordinates(xsmap),group=as.integer(factor(xsmap$week))) 
+Amap<-inla.spde.make.A(mesh=mesh,loc=coordinates(xsmap),group=gs) 
 #Apre<-inla.spde.make.A(mesh=mesh,loc=matrix(c(600,5050),ncol=2)[rep(1,n),,drop=FALSE],group=rep(12,n))
 
 #Apre<-inla.spde.make.A(mesh=mesh,loc=coordinates(xsmap),group=as.integer(factor(xsmap$week)))
 
+isetmap<-lapply(iset,"[",iset$i.group%in%gs)
+
 ## ----stack---------------------------------------------------------------
 stackest<-inla.stack(tag='est',data=list(y=xs$sp),A=list(Aest,1),effects=list(c(iset,list(intercept=1)),xs@data)) 
-stackmap<-inla.stack(tag='map',data=list(y=xsmap$sp),A=list(Amap,1),effects=list(c(iset,list(intercept=1)),xsmap@data)) 
+stackmap<-inla.stack(tag='map',data=list(y=xsmap$sp),A=list(Amap,1),effects=list(c(isetmap,list(intercept=1)),xsmap@data)) 
 #stackpre<-inla.stack(tag='pre',data=list(y=xs$sp),A=list(Aest,1),effects=list(c(iset,list(intercept=1)),xs@data)) 
 stackfull<-inla.stack(stackest,stackmap)
 
@@ -664,10 +708,12 @@ names(index)[3:length(index)]<-v1
 m <- inla(model,  data=inla.stack.data(stackfull), 
           control.predictor=list(compute=FALSE, A=inla.stack.A(stackfull),link=1), 
           #control.family=list(hyper=list(theta=prec.prior)), 
-          control.fixed=list(expand.factor.strategy='inla'),
+          control.fixed=control.fixed,
           control.inla = list(int.strategy = "eb"),
-          num.threads=3,
+          num.threads="6:6",
           verbose=TRUE,
+          control.compute=list(dic=FALSE,waic=FALSE,cpo=FALSE,config=TRUE),
+          #control.mode = list(result = m, restart = TRUE)), # to rerun the model with NA predictions according to https://06373067248184934733.googlegroups.com/attach/2662ebf61b581/sub.R?part=0.1&view=1&vt=ANaJVrHTFUnDqSbj6WTkDo-b_TftcP-dVVwK9SxPo9jmPvDiK58BmG7DpDdb0Ek6xypsqmCSTLDV1rczoY6Acg_Zb0VRPn1w2vRj3vzHYaHT8JMCEihVLbY
           family="nbinomial")#"zeroinflatednbinomial1"
 
 ## ----sbeta---------------------------------------------------------------
@@ -871,7 +917,7 @@ m <- inla(formulae,
 
 ### from haakon bakka, BTopic112
 nsims<-500
-samples<-inla.posterior.sample(nsims,m,num.threads="6.6")
+samples<-inla.posterior.sample(nsims,m,num.threads="6:6")
 m$misc$configs$contents
 contents<-m$misc$configs$contents
 effect<-"APredictor" # not sure if should use APredictor or Predictor
@@ -885,8 +931,8 @@ xi.eff<-sapply(samples, function(x) x$hyperpar[grep("Rho",names(x$hyperpar))])
 #####################################
 ### visualize spatial fields
 
-xlim<-range(coordinates(r)[,1])
-ylim<-range(coordinates(r)[,2])
+xlim<-bbox(mappingzone)[1,]
+ylim<-bbox(mappingzone)[1,]
 
 proj<-inla.mesh.projector(mesh,xlim=xlim,ylim=ylim,dims=c(300,300))
 
@@ -991,10 +1037,10 @@ for(k in seq_along(v1)){
     #fixed<-cbind(intercept=1,as.matrix(dat)) %*% betas
     ### this if we want a spatial part
     #wk<-samples[[i]]$latent[nweights]
-    #if(is.factor(size[,v[k]])){
+    #if(is.factor(xs@data[,v[k]])){
     #  spatial<-as.matrix(inla.spde.make.A(mesh=mesh,loc=matrix(c(0.3,0.5),ncol=2)[rep(1,nlevels(size[,v[k]])),,drop=FALSE])) %*% wk
     #}else{
-    #  spatial<-as.matrix(Apn) %*% wk
+    #  spatial<-as.matrix(AA) %*% wk # stack was Apn in fire
     #}
     #p<-exp(fixed+spatial)
     p<-exp(fixed)
@@ -1023,7 +1069,7 @@ mtext(paste("Fire size at the",q,"quantile (ha)"),outer=TRUE,cex=1.2,side=2,xpd=
 
 ### this is to show the posteriors of the spatial field
 
-res <- inla.spde.result(m, "spatial", spde)
+res <- inla.spde.result(m, "i", spde)
 par(mfrow=c(2,1))
 plot(res$marginals.range.nominal[[1]],
      type="l", main="Posterior density for range")
