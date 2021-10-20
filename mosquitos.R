@@ -383,8 +383,6 @@ l<-list.files(file.path(path,"daymet"),full=TRUE,pattern="_2015_")
 g<-lapply(l,function(i){
   r<-stack(i)[[1]]
   r<-setValues(r,ifelse(is.na(values(r)),NA,as.integer(gsub(".nc","",tail(strsplit(i,"_")[[1]],1)))))
-  #r2<-aggregate(r,fac=10,fun=mean)
-  #r<-resample(r2,r)
   r
 })
 bb<-lapply(g,function(i){
@@ -396,7 +394,10 @@ plot(g[[1]])
 invisible(lapply(bb,plot,add=TRUE))
 
 dsbuffer<-st_transform(st_as_sf(ds),crs=st_crs(g[[1]]))
-e<-extract(g,dsbuffer)
+# the fun is to ensure that a tile is returned in case values are missing in the raster
+# assumes that the most common value is the tile number
+# it is possible the in some case the value returned will be in a neigbouring tile
+e<-extract(g,dsbuffer,buffer=2000,fun=function(i){names(rev(sort(table(i)))[1])})
 dsbuffer$tile<-e
 dsbuffer$year_tile<-paste(dsbuffer$year,dsbuffer$tile,sep="_")
 
@@ -407,7 +408,16 @@ o<-order(ids[,3],ids[,2])
 ids<-ids[o,]
 lf<-lf[o]
 lf<-split(lf,paste(ids[,2],gsub(".nc","",ids[,3]),sep="_"))
-lf<-lapply(lf,stack)
+lf<-lapply(lf,function(i){
+  stack(i)
+})
+#lf2<-lapply(lf[1],function(i){
+#  # this fills missing values with the mean of neighbouring cells
+#  lras<-lapply(1:nlayers(i),function(j){
+#    focal(i[[j]],w=matrix(rep(1,3^2),ncol=3),fun=mean,na.rm=TRUE,NAonly=TRUE)
+#  })
+#  stack(lras)
+#})
 
 registerDoParallel(detectCores()-4) 
 getDoParWorkers()
@@ -418,7 +428,7 @@ ptemps<-c(1,15,90) # number of days over which to average weather values
 l<-foreach(i=seq_along(lf),.packages=c("raster","sf")) %do% {  
   w<-which(dsbuffer$year_tile==names(lf)[i])
   if(any(w)){
-    e<-extract(lf[[i]],dsbuffer[w,],method="simple") # some cells with NA so this takes neighbouring cells  
+    e<-extract(lf[[i]],dsbuffer[w,],method="bilinear") # some cells with NA so this takes neighbouring cells  
     ll<-lapply(seq_along(w),function(j){
       m<-match(dsbuffer$date[w[j]],gsub("\\.","-",gsub("X","",dimnames(e)[[2]])))
       a<-sapply(ptemps,function(k){
@@ -442,27 +452,37 @@ names(vals)<-paste0("tmax",ptemps)
 ds<-cbind(ds,vals)
 
 
-plot(st_geometry(st_transform(st_as_sf(ds),crs=crs(lf[[1]]))))
-plot(st_geometry(st_transform(st_as_sf(Q),crs=crs(lf[[1]]))),axes=TRUE,add=TRUE)
-lapply(1:length(lf),function(i){
-  plot(lf[[i]][[1]],legend=FALSE,add=F,zlim=c(-15,5))
-  text(colMeans(coordinates(lf[[i]]))[1],colMeans(coordinates(lf[[i]]))[2],i,cex=5)
-  plot(st_geometry(st_transform(st_as_sf(ds[!1:nrow(ds)%in%as.integer(dimnames(vals)[[1]]),]),crs=crs(lf[[1]]))),add=TRUE)
-  Sys.sleep(1)
-})
-plot(lf[[5]][[6]],add=TRUE,legend=FALSE)
-plot(st_geometry(st_transform(st_as_sf(ds),crs=crs(lf[[1]]))),add=TRUE)
-par(mfrow=c(1,2))
-test<-lf[[8]]
-plot(test,zlim=c(-10,0))
-test<-disaggregate(test,fact=2,method="bilinear")
-plot(test,zlim=c(-10,0))
-par(mfrow=c(1,1))
+#plot(st_geometry(st_transform(st_as_sf(ds),crs=crs(lf[[1]]))))
+#plot(st_geometry(st_transform(st_as_sf(Q),crs=crs(lf[[1]]))),axes=TRUE,add=TRUE)
+#lapply(1:length(lf),function(i){
+#  plot(lf[[i]][[1]],legend=FALSE,add=F,zlim=c(-15,5))
+#  text(colMeans(coordinates(lf[[i]]))[1],colMeans(coordinates(lf[[i]]))[2],i,cex=5)
+#  plot(st_geometry(st_transform(st_as_sf(ds[!1:nrow(ds)%in%as.integer(dimnames(vals)[[1]]),]),crs=crs(lf[[1]]))),add=TRUE)
+#  Sys.sleep(1)
+#})
+#plot(lf[[5]][[6]],add=TRUE,legend=FALSE)
+#plot(st_geometry(st_transform(st_as_sf(ds),crs=crs(lf[[1]]))),add=TRUE)
+#par(mfrow=c(1,2))
+#test<-lf[[8]]
+#plot(test,zlim=c(-10,0))
+#test<-disaggregate(test,fact=2,method="bilinear")
+#plot(test,zlim=c(-10,0))
+#par(mfrow=c(1,1))
 
+#plot(ds)
+#plot(ds[!1:nrow(ds)%in%as.integer(dimnames(vals)[[1]]),],add=TRUE,col="red",pch=1,lwd=3)
+#plot(st_geometry(st_transform(st_as_sf(ds[!1:nrow(ds)%in%as.integer(dimnames(vals)[[1]]),]),crs=crs(lf[[1]]))),add=TRUE)
 
-plot(ds)
-plot(ds[!1:nrow(ds)%in%as.integer(dimnames(vals)[[1]]),],add=TRUE,col="red",pch=1,lwd=3)
-plot(st_geometry(st_transform(st_as_sf(ds[!1:nrow(ds)%in%as.integer(dimnames(vals)[[1]]),]),crs=crs(lf[[1]]))),add=TRUE)
+#rr<-lf[[8]]#[[1]]
+#par(mfrow=c(1,2))
+#plot(rr)
+#rr<-focal(rr,w=matrix(rep(1,3^2),ncol=3),fun=mean,na.rm=TRUE,NAonly=TRUE)
+#plot(rr)
+#par(mfrow=c(1,1))
+
+#ll<-lapply(1:nlayers(rr),function(i){
+#  focal(rr[[i]],w=matrix(rep(1,3^2),ncol=3),fun=mean,na.rm=TRUE,NAonly=TRUE)
+#})
 
 
 #e<-exact_extract(weather,buff)
@@ -480,27 +500,40 @@ plot(st_geometry(st_transform(st_as_sf(ds[!1:nrow(ds)%in%as.integer(dimnames(val
 
 l<-list.files(file.path(path,"LULC/LULC/"),pattern=".tif",full.names=TRUE)
 l<-l[substr(l,nchar(l)-3,nchar(l))==".tif"]
+lulc<-stack(l)
+#NAvalue(lulc)<-0
 
-r<-stack(l)
-#NAvalue(r)<-0
-dsbuffer<-st_buffer(st_as_sf(spTransform(ds,CRS(proj4string(r)))),1000)
-e<-exact_extract(r,dsbuffer)
+# build ids to get unique location/year
+ds$idlulc<-paste(ds$longitude,ds$latitude)
+# make buffers for unique ids
+dsbuffer<-st_buffer(st_as_sf(spTransform(ds[!duplicated(ds$idlulc),],CRS(proj4string(lulc)))),1000)
+
+### visualize buffers on a satellite map
+buffers<-st_transform(dsbuffer,4326)
+mapview(list(st_centroid(buffers),buffers),alpha=0.25)
+
+
+# crop raster for faster computations
+lulc<-stack(crop(lulc,extent(st_bbox(dsbuffer))))
+
+e<-exact_extract(lulc[["LULC2011"]],dsbuffer)
+
 l<-lapply(seq_along(e),function(i){
-  #cov<-cbind(classn=e[[i]][,"LULC2011"],area=e[[i]][,"coverage_fraction"]*res(r)[1]*res(r)[2])
+  #cov<-cbind(classn=e[[i]][,"LULC2011"],area=e[[i]][,"coverage_fraction"]*res(lulc)[1]*res(lulc)[2])
   #a<-aggregate(area~classn,data=cov,FUN=sum)
   #a$area<-a$area/sum(a$area)
   #a$loc<-i
   # data.table version is faster
-  cov<-data.table(classn=e[[i]][,"LULC2011"],area=e[[i]][,"coverage_fraction"]*res(r)[1]*res(r)[2])
+  cov<-data.table(classn=e[[i]][,"value"],area=e[[i]][,"coverage_fraction"]*res(lulc)[1]*res(lulc)[2])
   a<-cov[,.(area=sum(area)),by=.(classn)]
   a[,area:=area/sum(area)]
-  a[,loc:=i]
+  a[,idlulc:=dsbuffer$idlulc[i]]
   cat("\r",paste(i,length(e),sep=" / "))
   a
 })
 l<-do.call("rbind",l)
 ld<-setDT(l)
-pcov<-dcast(ld,loc~classn,value.var="area",fill=0)
+pcov<-dcast(ld,idlulc~classn,value.var="area",fill=0)
 table(rowSums(pcov[,-1])) # should expect only 1's
 
 lccnames<-as.data.frame(read_excel(file.path(path,"0_ListeReclassification.xlsx"),sheet="Reclassification",range="C52:D64"))
@@ -508,7 +541,10 @@ names(lccnames)<-c("classn","orig")
 lccnames<-cbind(lccnames,class=c("clouds","water","barren","urban","wet","pond","marsh","swamp","crop","pasture","shrub","forest"))
 names(pcov)[-1]<-lccnames$class[match(names(pcov)[-1],lccnames$classn)]
 
-ds<-cbind(ds,pcov[,-1])
+### merge with obs
+#ds<-cbind(ds,pcov[,-1])
+ds<-merge(ds,pcov,by="idlulc",all.x=TRUE)
+
 ds$wetland<-ds$wet+ds$swamp+ds$marsh+ds$pond
 ds$agriculture<-ds$crop+ds$pasture
 ds$natural<-ds$shrub+ds$forest
@@ -519,17 +555,17 @@ ylim<-bbox(mappingzone)[2,]*1000
 #arg <- list(at=rat$ID, labels=rat$class)
 cols<-c("gray","skyblue","grey20","grey50","brown","skyblue","brown","brown","lightgoldenrod","lightgoldenrod","green","forestgreen")
 par(mar=c(0,0,0,8))
-plot(r[[1]],col=cols,breaks=c(0,lccnames$classn),axis.args=arg,xlim=xlim,ylim=ylim,zlim=c(0,220),legend=FALSE,legend.width=1,legend.shrink=1.25,axes=TRUE,bty="n")
+plot(lulc[[1]],col=cols,breaks=c(0,lccnames$classn),axis.args=arg,xlim=xlim,ylim=ylim,zlim=c(0,220),legend=FALSE,legend.width=1,legend.shrink=1.25,axes=TRUE,bty="n")
 legend(x=par("usr")[2],y=par("usr")[4],legend=paste(lccnames$class,lccnames$classn),fill=cols,bty="n",border=NA,cex=1.2,xpd=TRUE)
-plot(st_geometry(st_buffer(st_transform(st_as_sf(ds[ds$id!="map",]),proj4string(r)),1000)),add=TRUE)
+plot(st_geometry(st_buffer(st_transform(st_as_sf(ds[ds$id!="map",]),proj4string(lulc)),1000)),add=TRUE)
 #loc<-locator()
-#plot(r[[1]],col=cols,breaks=c(0,lccnames$classn),axis.args=arg,xlim=range(loc$x),ylim=range(loc$y),zlim=c(0,220),legend=FALSE,legend.width=1,legend.shrink=1.25,axes=TRUE)
-#plot(st_geometry(st_buffer(st_transform(st_as_sf(ds),proj4string(r)),1000)),add=TRUE)
+#plot(lulc[[1]],col=cols,breaks=c(0,lccnames$classn),axis.args=arg,xlim=range(loc$x),ylim=range(loc$y),zlim=c(0,220),legend=FALSE,legend.width=1,legend.shrink=1.25,axes=TRUE)
+#plot(st_geometry(st_buffer(st_transform(st_as_sf(ds),proj4string(lulc)),1000)),add=TRUE)
 #legend(x=par("usr")[2],y=par("usr")[4],legend=paste(lccnames$class,lccnames$classn),fill=cols,bty="n",border=NA,cex=1.2,xpd=TRUE)
 
 rev(sort(sapply(ls(),function(i){object.size(get(i))})))
 
-rm(e,lf,dsbuffer,can);gc();gc()
+rm(e,lf,dsbuffer,can,map,info);gc();gc()
 
 ### save the loaded data in a session
 #save.image("mosquitos.RData")
@@ -626,7 +662,7 @@ hist(1/sig)
 ##inla.setOption(inla.call='remote')
 
 ## models
-model <- y ~ -1 + intercept + jul + jul2 + natural + f(i, model=spde, group=i.group,control.group=list(model='ar1', hyper=h.spec)) 
+model <- y ~ -1 + intercept + jul + jul2 + forest + urban + f(i, model=spde, group=i.group,control.group=list(model='ar1', hyper=h.spec)) 
 #model <- y ~ -1 + intercept + f(i, model=spde, group=i.group,control.group=list(model='ar1', hyper=h.spec)) 
 #formulae <- y ~ 0 + w + f(i, model=spde) + f(week,model="rw1")
 #formulae <- y ~ 0 + w + f(i, model=spde, group=i.group,control.group=list(model='exchangeable')) 
@@ -706,15 +742,20 @@ names(index)[3:length(index)]<-v1
 
 
 m <- inla(model,  data=inla.stack.data(stackfull), 
-          control.predictor=list(compute=FALSE, A=inla.stack.A(stackfull),link=1), 
+          control.predictor=list(compute=TRUE, A=inla.stack.A(stackfull),link=1), 
           #control.family=list(hyper=list(theta=prec.prior)), 
           control.fixed=control.fixed,
-          control.inla = list(int.strategy = "eb"),
+          control.inla = list(strategy='adaptive',int.strategy = "eb"),
           num.threads="6:6",
           verbose=TRUE,
           control.compute=list(dic=FALSE,waic=FALSE,cpo=FALSE,config=TRUE),
           #control.mode = list(result = m, restart = TRUE)), # to rerun the model with NA predictions according to https://06373067248184934733.googlegroups.com/attach/2662ebf61b581/sub.R?part=0.1&view=1&vt=ANaJVrHTFUnDqSbj6WTkDo-b_TftcP-dVVwK9SxPo9jmPvDiK58BmG7DpDdb0Ek6xypsqmCSTLDV1rczoY6Acg_Zb0VRPn1w2vRj3vzHYaHT8JMCEihVLbY
           family="nbinomial")#"zeroinflatednbinomial1"
+
+
+#save.image("data/mosquitos_model.RData")
+#load("data/mosquitos_model.RData")
+
 
 ## ----sbeta---------------------------------------------------------------
 #round(cbind(observed=tapply(dat$y, dat$w, mean), m$summary.fixed), 4) 
@@ -742,7 +783,7 @@ projgrid <- inla.mesh.projector(mesh, xlim=range(coords[,1]),ylim=range(coords[,
 
 ## ----projpmean-----------------------------------------------------------
 xmean <- list()
-for (j in 1:k){
+for (j in 1:length(unique(xs$week))){
   xmean[[j]] <- inla.mesh.project(projgrid,m$summary.random$i$mean[iset$i.group==j])
 }
 
@@ -751,7 +792,7 @@ b<-gBuffer(gConvexHull(SpatialPoints(domain$loc,p=CRS(proj4string(ds)))),width=0
 o <- over(SpatialPoints(projgrid$lattice$loc,p=CRS(proj4string(ds))),b)
 
 ## ----setNAs---------------------------------------------------------------
-for (j in 1:k)   xmean[[j]][is.na(o)] <- NA
+for (j in 1:length(unique(xs$week)))   xmean[[j]][is.na(o)] <- NA
 r<-stack(lapply(xmean,function(i){
   raster(nrows=nxy[2], ncols=nxy[1], xmn=min(projgrid$x), xmx=max(projgrid$x), ymn=min(projgrid$y), ymx=max(projgrid$y),crs=CRS(proj4string(xs)),vals=as.vector(i[,ncol(i):1])) ## some crazy ordering in INLA output be careful
   #raster(i)
@@ -790,132 +831,8 @@ plot(x,y,type="l",xaxt="n",xlim=range(xx))
 axis(1,at=xx,label=20:40)
 
 
-###################################################################
-### SHOW PREDICTONS
-###################################################################
-
-###################################################################
-### build prediction grid
-###################################################################
-
-plot(st_geometry(st_transform(st_as_sf(inla.mesh2sp(mesh)$triangles),4326)))
-
-pr<-raster(ext=extent(mappingzone),res=c(6,6),crs=CRS(proj4string(mappingzone)))
-g<-st_buffer(st_as_sf(xyFromCell(pr,1:ncell(pr),spatial=TRUE)),dist=1)
-
-plot(mesh,asp=1)
-plot(g,add=TRUE)
-
-plot(rlcc)
-plot(st_transform(g,4326),add=TRUE)
-
-l<-vrlcc$extract(st_transform(g,4326))
-l<-lapply(l,function(i){
-  x<-i[,1]
-  x<-x[!is.na(x)]
-  x<-factor(lcc[x],levels=lcc)
-  table(x)/sum(table(x))
-})
-pgrid<-as.data.frame(do.call("rbind",l))
-ll<-lapply(pgrid,function(i){
-  setValues(pr,i)
-})
-rgrid<-stack(ll)
-
-plot(rlcc)
-plot(st_transform(g,4326),add=TRUE)
-
-
-###################################################################
-### build prediction matrices for the map and the prediction graphs
-weeks<-unique(as.integer(factor(xs$Week)))
-Ap<-inla.spde.make.A(mesh=mesh,loc=coordinates(rgrid)[rep(1:ncell(rgrid),length(weeks)),],group=rep(weeks,each=ncell(rgrid)))
-n<-5 # number of divisions in generated values for the focus variable
-Apn<-inla.spde.make.A(mesh=mesh,loc=matrix(c(600,5050),ncol=2)[rep(1,n),,drop=FALSE],group=rep(12,n))
-
-# set location for predictions with the values of variables at this location?
-
-################################################
-### build newdata with variable values to submit
-v<-setdiff(all.vars(formulae),c("y","i","intercept","spde","i.group","h.spec"))
-v2<-v[grep("2",v)]
-v1<-setdiff(v,v2)
-lp<-newdata(x=xs@data[,v1,drop=FALSE],v=v1,n=n,fun=median,list=FALSE)
-if(length(v2)){
-  lp<-lapply(lp,function(i){
-    a<-as.data.frame(lapply(i[,gsub("2","",v2),drop=FALSE],"^",2))
-    names(a)<-v2
-    res<-cbind(i,a)
-    res[,order(names(res))]
-  })
-}
-model<-formula(paste("y~-1+",paste(v,collapse="+")))
-#lp<-lapply(lp,function(i){mmatrix(model,i)})
-#lpmed<-mmatrix(model,newdata(x=xs[,v,drop=FALSE],v=v,n=1,fun=median,list=FALSE)[[1]][rep(1,length(g)),])[[1]]
-vmap<-data.frame(week=sort(unique(xs$week)))
-vmap$week2<-vmap$week^2
-vmap<-vmap[rep(1:length(weeks),each=ncell(rgrid)),]
-vmap<-cbind(vmap,pgrid[rep(1:nrow(pgrid),length.out=nrow(vmap)),])
-
-#vpred<-data.frame(week=seq(20,40,length.out=n))
-#me<-newdata(x=xs@data[,v1,drop=FALSE],v=names(vpred)[1],n=1,fun=median,list=FALSE)[[1]]
-#me<-me[,!names(me)%in%names(vpred),drop=FALSE]
-#vpred<-cbind(vpred,me)
-
-########################################################
-### bind the data stack for the estimate and for the map
-stack.est<-inla.stack(data=list(y=xs$sp),A=list(A,1),effects=list(c(iset,list(intercept=1)),data.frame(xs@data[xs$db!="pred",v])),tag="est")
-stack.map<-inla.stack(data=list(y=NA),A=list(Ap,1),effects=list(c(iset,list(intercept=1)),vmap),tag="map")
-#stack.pred<-inla.stack(data=list(y=NA),A=list(Apn,1),effects=list(c(lapply(iset,"[",iset$i.group==12),list(intercept=1)),vpred),tag="pred")
-#full.stack<-inla.stack(stack.est,stack.map,stack.pred)
-full.stack<-inla.stack(stack.est,stack.map)
-#full.stack<-inla.stack(stack.est,stack.pred)
-
-#######################################
-### add a stack for each focus variable
-for(i in seq_along(v1)){
-  le<-nrow(lp[[v1[i]]])
-  if(le!=n){
-    #AA<-inla.spde.make.A(mesh=mesh,loc=matrix(c(0.3,0.5),ncol=2)[rep(1,le),,drop=FALSE]) # for categorical variables
-    AA<-inla.spde.make.A(mesh=mesh,loc=matrix(c(600,5050),ncol=2)[rep(1,n),,drop=FALSE],group=rep(12,n))
-  }else{
-    #AA<-Apn # for numerical variables
-    AA<-inla.spde.make.A(mesh=mesh,loc=matrix(c(600,5050),ncol=2)[rep(1,n),,drop=FALSE],group=rep(12,n))
-  }
-  stack<-inla.stack(data=list(y=NA),A=list(AA,1),effects=list(c(lapply(iset,"[",iset$i.group==12),list(intercept=1)),lp[[v1[i]]]),tag=v1[i])     
-  full.stack<-inla.stack(full.stack,stack)
-}
-
-##########################################
-### extract index for each stack
-index.est<-inla.stack.index(full.stack,tag="est")$data
-index.map<-inla.stack.index(full.stack,tag="map")$data
-#index.pred<-inla.stack.index(full.stack,tag="pred")$data
-#index<-list(est=index.est,map=index.map,pred=index.pred)
-index<-list(est=index.est,map=index.map)
-#index<-list(est=index.est,pred=index.pred)
-for(i in seq_along(v1)){
-  index<-c(index,list(inla.stack.index(full.stack,tag=v1[i])$data))
-}  
-names(index)[3:length(index)]<-v1
-
-##################################################
-### rerun best model with each variable to predict
-
-#m<-inla(modellmm[[b]],data=inla.stack.data(full.stack),control.predictor=list(A=inla.stack.A(full.stack),compute=TRUE,link=1),control.compute=list(dic=TRUE,waic=TRUE,cpo=TRUE,config=TRUE),control.inla=list(strategy='simplified.laplace',int.strategy="eb"),family="gp",control.family=list(list(control.link=list(quantile=q),hyper=hyper.gp)),control.fixed=control.fixed,num.threads=7)
-
-m <- inla(formulae,  
-          data=inla.stack.data(full.stack), 
-          control.predictor=list(A=inla.stack.A(full.stack),compute=TRUE,link=1),
-          control.compute=list(dic=FALSE,waic=FALSE,cpo=FALSE,config=TRUE),
-          #control.family=list(hyper=list(theta=prec.prior)), 
-          control.fixed=list(expand.factor.strategy='inla'),
-          control.inla=list(int.strategy="eb"),#list(strategy='simplified.laplace',int.strategy="eb"),
-          num.threads=3,
-          verbose=FALSE,
-          family="nbinomial")#"zeroinflatednbinomial1"
-
-### from haakon bakka, BTopic112
+### get posterior samples
+# from haakon bakka, BTopic112
 nsims<-500
 samples<-inla.posterior.sample(nsims,m,num.threads="6:6")
 m$misc$configs$contents
@@ -927,6 +844,7 @@ samples.effect<-lapply(samples, function(x) x$latent[ind.effect])
 s.eff<-do.call("cbind",samples.effect)
 xi.eff<-sapply(samples, function(x) x$hyperpar[grep("Rho",names(x$hyperpar))])
 #unique(sapply(strsplit(rownames(m$summary.fitted.values),"\\."),function(i){paste(i[1:min(2,length(i))],collapse=" ")}))
+
 
 #####################################
 ### visualize spatial fields
@@ -1063,6 +981,21 @@ for(k in seq_along(v1)){
   axis(2,las=2)
 }
 mtext(paste("Fire size at the",q,"quantile (ha)"),outer=TRUE,cex=1.2,side=2,xpd=TRUE,line=2)
+
+
+################################################
+### map predictions
+################################################
+
+xsmap$pred<-m$summary.fitted.values[index.map,"mean"]
+pred<-rasterize(xsmap,pgrid,field="pred")
+plot(pred)
+pred<-disaggregate(pred,fact=10,method="bilinear") # hack to make the map smoother
+plot(pred)
+plot(xs[xs$week%in%xsmap$week,],add=TRUE,cex=scales::rescale(xs$sp[xs$week%in%xsmap$week],to=c(0.1,10)),pch=1,lwd=3)
+plot(Q,add=TRUE)
+
+
 
 ###############################################
 ### range and sigma
