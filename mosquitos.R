@@ -281,7 +281,7 @@ ds$latitude<-d$lat
 proj4string(ds)<-"+init=epsg:4326"
 ds<-spTransform(ds,CRS(prj))
 
-l<-split(ds,ds$year)
+l<-split(ds[!ds$db%in%"map",],ds$year[!ds$db%in%"map"])
 par(mfrow=n2mfrow(length(l)),mar=c(0.25,0.25,0.25,0.25))
 lapply(l,function(i){
   x<-i[!duplicated(i$longitude),]
@@ -600,7 +600,7 @@ axis(2,at=1:nlevels(x$id),labels=levels(x$id),las=2,cex.axis=0.35)
 # summary of most abundant species per year
 d[,lapply(.SD,sum,na.rm=TRUE),by=year,.SD=species][order(year),][,1:6]
 
-year<-2015
+year<-2014
 
 xs<-ds[ds$year%in%year,]
 sp<-names(xs)[grep("VEX_",names(xs))]
@@ -610,11 +610,11 @@ xs<-xs[order(xs$week),]
 xs<-xs[substr(xs$week,7,8)%in%23:39,]
 
 # build mesh
-edge<-4
+edge<-2
 domain <- inla.nonconvex.hull(coordinates(ds),convex=-0.075, resolution = c(100, 100))
-mesh<-inla.mesh.2d(loc.domain=coordinates(ds),max.edge=c(edge,2*edge),offset=c(edge,edge),cutoff=edge,boundary=domain,crs=CRS(proj4string(xs)))
+mesh<-inla.mesh.2d(loc.domain=coordinates(ds),max.edge=c(edge,3*edge),offset=c(edge,edge),cutoff=edge,boundary=domain,crs=CRS(proj4string(xs)))
 plot(mesh,asp=1)
-plot(xs,add=TRUE,pch=1,col="red")
+plot(xs[!xs$db%in%"map",],add=TRUE,pch=1,col="red")
 plot(mappingzone,add=TRUE)
 
 xsmap<-xs[xs$db=="map",]
@@ -662,7 +662,7 @@ hist(1/sig)
 ##inla.setOption(inla.call='remote')
 
 ## models
-model <- y ~ -1 + intercept + jul + jul2 + forest + urban + f(i, model=spde, group=i.group,control.group=list(model='ar1', hyper=h.spec)) 
+model <- y ~ -1 + intercept + jul + jul2 + forest + urban + tmax15 + tmax1 + f(i, model=spde, group=i.group,control.group=list(model='ar1', hyper=h.spec)) 
 #model <- y ~ -1 + intercept + f(i, model=spde, group=i.group,control.group=list(model='ar1', hyper=h.spec)) 
 #formulae <- y ~ 0 + w + f(i, model=spde) + f(week,model="rw1")
 #formulae <- y ~ 0 + w + f(i, model=spde, group=i.group,control.group=list(model='exchangeable')) 
@@ -752,9 +752,23 @@ m <- inla(model,  data=inla.stack.data(stackfull),
           #control.mode = list(result = m, restart = TRUE)), # to rerun the model with NA predictions according to https://06373067248184934733.googlegroups.com/attach/2662ebf61b581/sub.R?part=0.1&view=1&vt=ANaJVrHTFUnDqSbj6WTkDo-b_TftcP-dVVwK9SxPo9jmPvDiK58BmG7DpDdb0Ek6xypsqmCSTLDV1rczoY6Acg_Zb0VRPn1w2vRj3vzHYaHT8JMCEihVLbY
           family="nbinomial")#"zeroinflatednbinomial1"
 
+### get posterior samples
+# from haakon bakka, BTopic112
+nsims<-500
+samples<-inla.posterior.sample(nsims,m,num.threads="6:6")
+m$misc$configs$contents
+contents<-m$misc$configs$contents
+effect<-"APredictor" # not sure if should use APredictor or Predictor
+id.effect<-which(contents$tag==effect)
+ind.effect<-contents$start[id.effect]-1+(1:contents$length[id.effect])[index[["est"]]]
+samples.effect<-lapply(samples, function(x) x$latent[ind.effect])
+s.eff<-do.call("cbind",samples.effect)
+xi.eff<-sapply(samples, function(x) x$hyperpar[grep("Rho",names(x$hyperpar))])
+#unique(sapply(strsplit(rownames(m$summary.fitted.values),"\\."),function(i){paste(i[1:min(2,length(i))],collapse=" ")}))
 
-#save.image("data/mosquitos_model.RData")
-#load("data/mosquitos_model.RData")
+
+#save.image("mosquitos_model.RData")
+#load("mosquitos_model.RData")
 
 
 ## ----sbeta---------------------------------------------------------------
@@ -798,7 +812,6 @@ r<-stack(lapply(xmean,function(i){
   #raster(i)
 }))
 names(r)<-unique(xs$week)
-cols<-colo.scale(200,c("steelblue3","orange","red3","darkred"))#,"grey20"))
 
 # voir argument panel.number ou packets de layer
 xsbuff<-st_coordinates(st_cast(st_buffer(st_as_sf(xs),7),"MULTIPOINT"))[,1:2]
@@ -806,6 +819,8 @@ buf<-concaveman(xsbuff,10)
 buf<-spPolygons(buf,crs=CRS(proj4string(xs)))
 buf<-gBuffer(buf,width=1)
 r<-mask(r,buf)
+
+cols<-colo.scale(seq(range(values(r),na.rm=TRUE)[1],range(values(r),na.rm=TRUE)[2],length.out=200),c("darkblue","dodgerblue","ivory2","tomato2","firebrick4"),center=TRUE)#,"grey20"))
 
 xxs<-split(xs[!is.na(xs$sp),],xs$week[!is.na(xs$sp)])
 p.strip<-list(cex=0.65,lines=1,col="black")
@@ -829,21 +844,6 @@ y<-exp(m$summary.fixed[1,1]+m$summary.fixed[2,1]*x+m$summary.fixed[3,1]*x^2)
 xx<-20:40
 plot(x,y,type="l",xaxt="n",xlim=range(xx))
 axis(1,at=xx,label=20:40)
-
-
-### get posterior samples
-# from haakon bakka, BTopic112
-nsims<-500
-samples<-inla.posterior.sample(nsims,m,num.threads="6:6")
-m$misc$configs$contents
-contents<-m$misc$configs$contents
-effect<-"APredictor" # not sure if should use APredictor or Predictor
-id.effect<-which(contents$tag==effect)
-ind.effect<-contents$start[id.effect]-1+(1:contents$length[id.effect])[index[["est"]]]
-samples.effect<-lapply(samples, function(x) x$latent[ind.effect])
-s.eff<-do.call("cbind",samples.effect)
-xi.eff<-sapply(samples, function(x) x$hyperpar[grep("Rho",names(x$hyperpar))])
-#unique(sapply(strsplit(rownames(m$summary.fitted.values),"\\."),function(i){paste(i[1:min(2,length(i))],collapse=" ")}))
 
 
 #####################################
@@ -934,24 +934,11 @@ nparams<-sapply(params,function(i){
 }) 
 nweights<-grep("i",row.names(samples[[1]]$latent))
 
-### this is to compare with a quantile model
-#par(mfrow=c(round(sqrt(2*length(v)),0),ceiling(sqrt(2*length(v)))),mar=c(4,4,3,3),oma=c(0,10,0,0))
-#mq <- rq (tTotal ~ Road1k + Pp_1000 + urbwtr1k + Ag_1000 + h__1000 + FWI, data = na.omit(size),tau=q)
-#na<-all.vars(mq$formula[[3]])
-#grobs<-lapply(na,function(i){
-#  if(is.factor(size[,i])){
-#    plot(ggpredict(mq,terms=i),limits=c(0,100),raw=TRUE)  
-#  }else{
-#    plot(ggpredict(mq,terms=paste(i,"[n=50]")),limits=c(0,100),raw=TRUE) 
-#  }
-#})
-#grid.arrange(grobs=grobs,ncol=3)
-
-par(mfrow=c(round(sqrt(length(v)),0),ceiling(sqrt(length(v)))),mar=c(4,3,2,2),oma=c(0,10,0,0))
+par(mfrow=n2mfrow(length(v1),asp=3.5/2),mar=c(4,3,2,2),oma=c(0,10,0,0))
 for(k in seq_along(v1)){
   p<-lapply(1:nsims,function(i){
     betas<-samples[[i]]$latent[nparams]
-    fixed<-cbind(intercept=1,as.matrix(lp[[v1[k]]])) %*% betas
+    fixed<-cbind(intercept=1,as.matrix(lp[[v1[k]]][,names(nparams[-1])])) %*% betas # make sure betas and vars are in the same order
     #fixed<-cbind(intercept=1,as.matrix(dat)) %*% betas
     ### this if we want a spatial part
     #wk<-samples[[i]]$latent[nweights]
@@ -980,7 +967,7 @@ for(k in seq_along(v1)){
   }
   axis(2,las=2)
 }
-mtext(paste("Fire size at the",q,"quantile (ha)"),outer=TRUE,cex=1.2,side=2,xpd=TRUE,line=2)
+mtext(paste("Mosquitos per trap"),outer=TRUE,cex=1.2,side=2,xpd=TRUE,line=2)
 
 
 ################################################
@@ -989,12 +976,20 @@ mtext(paste("Fire size at the",q,"quantile (ha)"),outer=TRUE,cex=1.2,side=2,xpd=
 
 xsmap$pred<-m$summary.fitted.values[index.map,"mean"]
 pred<-rasterize(xsmap,pgrid,field="pred")
-plot(pred)
-pred<-disaggregate(pred,fact=10,method="bilinear") # hack to make the map smoother
-plot(pred)
-plot(xs[xs$week%in%xsmap$week,],add=TRUE,cex=scales::rescale(xs$sp[xs$week%in%xsmap$week],to=c(0.1,10)),pch=1,lwd=3)
-plot(Q,add=TRUE)
+pred<-disaggregate(pred,fact=20,method="bilinear") # hack to make the map smoother
 
+### use tighter mapping zone instead of mappingzone
+xsbuff<-st_coordinates(st_cast(st_buffer(st_as_sf(xs),7),"MULTIPOINT"))[,1:2]
+buf<-concaveman(xsbuff,10)
+buf<-spPolygons(buf,crs=CRS(proj4string(xs)))
+buf<-gBuffer(buf,width=1)
+pred<-mask(pred,buf)
+
+cols<-colo.scale(200,c("steelblue3","orange","red3","darkred"))#,"grey20"))
+plot(pred,col=cols)
+plot(xs[xs$week%in%xsmap$week,],add=TRUE,cex=scales::rescale(xs$sp[xs$week%in%xsmap$week],to=c(0.1,10)),pch=16,lwd=3,col=gray(0,0.15))
+plot(Q,add=TRUE)
+plot(mappingzone,add=TRUE)
 
 
 ###############################################
