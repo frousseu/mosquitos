@@ -323,7 +323,7 @@ plot(ds,add=TRUE,pch=1)
 # this allows to make the lcc/daymet extractions in a single step
 # and INLA does predictions for NA response values
 
-pgrid<-raster(ext=extent(mappingzone),res=c(5,5),crs=CRS(proj4string(mappingzone)))
+pgrid<-raster(ext=extent(mappingzone),res=c(2,2),crs=CRS(proj4string(mappingzone)))
 pgrid<-setValues(pgrid,1)
 g<-xyFromCell(pgrid,1:ncell(pgrid),spatial=TRUE)
 plot(pgrid)
@@ -506,7 +506,7 @@ lulc<-stack(l)
 # build ids to get unique location/year
 ds$idlulc<-paste(ds$longitude,ds$latitude)
 # make buffers for unique ids
-dsbuffer<-st_buffer(st_as_sf(spTransform(ds[!duplicated(ds$idlulc),],CRS(proj4string(lulc)))),1000)
+dsbuffer<-st_buffer(st_as_sf(spTransform(ds[!duplicated(ds$idlulc),],CRS(proj4string(lulc)))),250)
 
 ### visualize buffers on a satellite map
 buffers<-st_transform(dsbuffer,4326)
@@ -514,7 +514,7 @@ mapview(list(st_centroid(buffers),buffers),alpha=0.25)
 
 
 # crop raster for faster computations
-lulc<-stack(crop(lulc,extent(st_bbox(dsbuffer))))
+lulc<-crop(lulc,extent(st_bbox(dsbuffer)))
 
 e<-exact_extract(lulc[["LULC2011"]],dsbuffer)
 
@@ -563,6 +563,10 @@ plot(st_geometry(st_buffer(st_transform(st_as_sf(ds[ds$id!="map",]),proj4string(
 #plot(st_geometry(st_buffer(st_transform(st_as_sf(ds),proj4string(lulc)),1000)),add=TRUE)
 #legend(x=par("usr")[2],y=par("usr")[4],legend=paste(lccnames$class,lccnames$classn),fill=cols,bty="n",border=NA,cex=1.2,xpd=TRUE)
 
+ds$jul<-ds$jul/100
+ds$jul2<-ds$jul^2
+ds$db<-gsub("pred","map",ds$db)
+
 rev(sort(sapply(ls(),function(i){object.size(get(i))})))
 
 rm(e,lf,dsbuffer,can,map,info);gc();gc()
@@ -590,17 +594,10 @@ axis(2,at=1:nlevels(x$id),labels=levels(x$id),las=2,cex.axis=0.35)
 
 #load("mosquitos.RData")
 
-# temp manips
-
-#ds$jul<-ds$jul/100
-#ds$jul2<-ds$jul^2
-#ds$db<-gsub("pred","map",ds$db)
-
-
 # summary of most abundant species per year
 d[,lapply(.SD,sum,na.rm=TRUE),by=year,.SD=species][order(year),][,1:6]
 
-year<-2014
+year<-2015
 
 xs<-ds[ds$year%in%year,]
 sp<-names(xs)[grep("VEX_",names(xs))]
@@ -610,7 +607,7 @@ xs<-xs[order(xs$week),]
 xs<-xs[substr(xs$week,7,8)%in%23:39,]
 
 # build mesh
-edge<-2
+edge<-4
 domain <- inla.nonconvex.hull(coordinates(ds),convex=-0.075, resolution = c(100, 100))
 mesh<-inla.mesh.2d(loc.domain=coordinates(ds),max.edge=c(edge,3*edge),offset=c(edge,edge),cutoff=edge,boundary=domain,crs=CRS(proj4string(xs)))
 plot(mesh,asp=1)
@@ -621,7 +618,7 @@ xsmap<-xs[xs$db=="map",]
 xs<-xs[xs$db!="map",]
 
 ### restrict prediction to a given set of weeks/years
-keep<-expand.grid(year=year,week=32)
+keep<-expand.grid(year=year[length(year)],week=32)
 keep<-sort(sapply(1:nrow(keep),function(i){paste(keep$year[i],keep$week[i],sep="_W")}))
 xsmap<-xsmap[xsmap$week%in%keep,]
 
@@ -741,7 +738,7 @@ for(i in seq_along(v1)){
 names(index)[3:length(index)]<-v1
 
 
-m <- inla(model,  data=inla.stack.data(stackfull), 
+m <- inla(model,data=inla.stack.data(stackfull), 
           control.predictor=list(compute=TRUE, A=inla.stack.A(stackfull),link=1), 
           #control.family=list(hyper=list(theta=prec.prior)), 
           control.fixed=control.fixed,
@@ -750,10 +747,10 @@ m <- inla(model,  data=inla.stack.data(stackfull),
           verbose=TRUE,
           control.compute=list(dic=FALSE,waic=FALSE,cpo=FALSE,config=TRUE),
           #control.mode = list(result = m, restart = TRUE)), # to rerun the model with NA predictions according to https://06373067248184934733.googlegroups.com/attach/2662ebf61b581/sub.R?part=0.1&view=1&vt=ANaJVrHTFUnDqSbj6WTkDo-b_TftcP-dVVwK9SxPo9jmPvDiK58BmG7DpDdb0Ek6xypsqmCSTLDV1rczoY6Acg_Zb0VRPn1w2vRj3vzHYaHT8JMCEihVLbY
-          family="nbinomial")#"zeroinflatednbinomial1"
+          family="zeroinflatednbinomial1")#"zeroinflatednbinomial1"
 
 ### get posterior samples
-# from haakon bakka, BTopic112
+# from haakon bakk a, BTopic112
 nsims<-500
 samples<-inla.posterior.sample(nsims,m,num.threads="6:6")
 m$misc$configs$contents
@@ -763,8 +760,9 @@ id.effect<-which(contents$tag==effect)
 ind.effect<-contents$start[id.effect]-1+(1:contents$length[id.effect])[index[["est"]]]
 samples.effect<-lapply(samples, function(x) x$latent[ind.effect])
 s.eff<-do.call("cbind",samples.effect)
-xi.eff<-sapply(samples, function(x) x$hyperpar[grep("Rho",names(x$hyperpar))])
-#unique(sapply(strsplit(rownames(m$summary.fitted.values),"\\."),function(i){paste(i[1:min(2,length(i))],collapse=" ")}))
+#xi.eff<-sapply(samples, function(x) x$hyperpar[grep("Rho",names(x$hyperpar))])
+xi.eff<-sapply(samples, function(x) x$hyperpar[grep("size",names(x$hyperpar))])
+ #unique(sapply(strsplit(rownames(m$summary.fitted.values),"\\."),function(i){paste(i[1:min(2,length(i))],collapse=" ")}))
 
 
 #save.image("mosquitos_model.RData")
@@ -821,7 +819,6 @@ buf<-gBuffer(buf,width=1)
 r<-mask(r,buf)
 
 cols<-colo.scale(seq(range(values(r),na.rm=TRUE)[1],range(values(r),na.rm=TRUE)[2],length.out=200),c("darkblue","dodgerblue","ivory2","tomato2","firebrick4"),center=TRUE)#,"grey20"))
-
 xxs<-split(xs[!is.na(xs$sp),],xs$week[!is.na(xs$sp)])
 p.strip<-list(cex=0.65,lines=1,col="black")
 levelplot(r,col.regions=cols,cuts=199,par.strip.text=p.strip,par.settings = list(axis.line = list(col = "grey90"),strip.background = list(col = 'transparent'),strip.border = list(col = 'grey90')),scales = list(col = "black")) +
@@ -873,29 +870,6 @@ axis(1)
 axis(2)
 plot(swediv,add=TRUE,border=gray(0,0.5))
 #plot(sizesdiv,pch=1,cex=0.1*m$summary.fitted.values[index.est,"mean"],col=gray(0.1,0.13),add=TRUE)
-
-
-##################################
-### build a relative frequency map
-
-p<-m$summary.fitted.values[index[["map"]],"mean"] # the lambda is to back-transform on the original scale)
-rgp<-setValues(r,p)
-rr<-mask(rgp,buf)
-brks <- seq(min(p),max(p),by=0.1)
-cols<-colo.scale(300,rev(brewer.pal(11,"RdYlGn")))
-plot(rgp,col=cols,axes=FALSE,legend.shrink=1, legend.width=4,axis.args=list(at=pretty(brks,n=10), labels=pretty(brks,n=10)),legend.args=list(text='Abundance', side=4, font=2, line=2.3))
-plot(swediv,add=TRUE,border=gray(0,0.25),lwd=0.01)
-
-### sd
-p<-m$summary.fitted.values[index[["map"]],"sd"]
-gp<-SpatialPixelsDataFrame(g,data=data.frame(p=p))
-rgp<-raster(gp)
-brks <- seq(min(p),max(p),by=0.01)
-cols<-colo.scale(300,rev(brewer.pal(11,"RdYlGn")))
-plot(swediv,axes=TRUE)
-plot(rgp,col=cols,axes=FALSE,box="n",legend.shrink=1, legend.width=4,add=TRUE,axis.args=list(at=pretty(brks,n=10), labels=pretty(brks,n=10)),
-     legend.args=list(text='sd of predicted fire size', side=4, font=2, line=2.3))
-plot(swediv,add=TRUE,border=gray(0,0.25),lwd=0.01)
 
 
 ####################################################
@@ -956,26 +930,35 @@ for(k in seq_along(v1)){
   if(nrow(lp[[v1[k]]])==n){
     vals<-lp[[v1[k]]][,v1[k]]
     plot(vals,p[,2],type="l",ylim=c(0,100),xlab=v1[k],font=2,ylab="",lty=1,yaxt="n")
-    points(xs@data[,v1[k]],xs$sp,pch=1,col=gray(0,0.15))
-    lines(vals,p[,2],lwd=2)
-    lines(vals,p[,1],lty=3)
-    lines(vals,p[,3],lty=3)
+    points(xs@data[,v1[k]],xs$sp,pch=1,col=gray(0,0.1))
+    lines(vals,p[,2],lwd=3,col=gray(0,0.8))
+    #lines(vals,p[,1],lty=3)
+    #lines(vals,p[,3],lty=3)
+    polygon(c(vals,rev(vals),vals[1]),c(p[,1],rev(p[,3]),p[,1][1]),col=gray(0,0.1),border=NA)
   }else{
     plot(unique(sort(size[,v[k]])),p[,2],type="l",ylim=c(0,100),xlab=v[k],font=2,ylab="",lty=1,yaxt="n")
-    points(jitter(as.integer(size[,v[k]])),size$tTotal,pch=1,col=gray(0,0.15))
+    points(jitter(as.integer(size[,v[k]])),size$tTotal,pch=16,col=gray(0,0.1))
     segments(x0=as.integer(unique(sort(size[,v[k]]))),x1=as.integer(unique(sort(size[,v[k]]))),y0=p[,1],y1=p[,3],lty=3)
   }
   axis(2,las=2)
 }
 mtext(paste("Mosquitos per trap"),outer=TRUE,cex=1.2,side=2,xpd=TRUE,line=2)
 
+mm<-glmmTMB(sp~jul+jul2+forest+urban+tmax1+tmax15,data=xs@data[!is.na(xs$sp),],family=nbinom2())
+
 
 ################################################
 ### map predictions
 ################################################
 
-xsmap$pred<-m$summary.fitted.values[index.map,"mean"]
-pred<-rasterize(xsmap,pgrid,field="pred")
+quantities<-c("mean","X0.025quant","X0.975quant","sd")
+xsmappred<-cbind(xsmap[,"id"],data.frame(m$summary.fitted.values[index.map,gsub("X","",quantities)]))
+pred<-lapply(seq_along(quantities),function(i){
+  rasterize(xsmappred,pgrid,field=quantities[i])
+})
+pred<-stack(pred)
+names(pred)<-quantities
+
 pred<-disaggregate(pred,fact=20,method="bilinear") # hack to make the map smoother
 
 ### use tighter mapping zone instead of mappingzone
@@ -985,11 +968,19 @@ buf<-spPolygons(buf,crs=CRS(proj4string(xs)))
 buf<-gBuffer(buf,width=1)
 pred<-mask(pred,buf)
 
-cols<-colo.scale(200,c("steelblue3","orange","red3","darkred"))#,"grey20"))
-plot(pred,col=cols)
-plot(xs[xs$week%in%xsmap$week,],add=TRUE,cex=scales::rescale(xs$sp[xs$week%in%xsmap$week],to=c(0.1,10)),pch=16,lwd=3,col=gray(0,0.15))
-plot(Q,add=TRUE)
-plot(mappingzone,add=TRUE)
+
+cols<-colo.scale(200,c("steelblue3","orange","red3","darkred"))
+colssd<-viridis(200)
+par(mfrow=n2mfrow(length(quantities)))
+lapply(quantities[c(1,4,2,3)],function(i){
+  col<-if(i=="sd"){colssd}else{cols}
+  zlim<-if(i%in%c("sd","mean")){NULL}else{range(values(pred[[quantities[1:3]]]),na.rm=TRUE)}
+  plot(pred[[i]],col=col,zlim=zlim)
+  plot(xs[xs$week%in%xsmap$week,],add=TRUE,cex=scales::rescale(xs$sp[xs$week%in%xsmap$week],to=c(0.3,10)),pch=16,lwd=3,col=gray(0,0.15))
+  plot(Q,add=TRUE)
+  plot(mappingzone,add=TRUE)
+  mtext(side=3,line=-1.1,text=i,adj=0.99)
+})
 
 
 ###############################################
@@ -1004,6 +995,32 @@ plot(res$marginals.range.nominal[[1]],
 plot(inla.tmarginal(sqrt, res$marginals.variance.nominal[[1]]),
      type="l", main="Posterior density for std.dev.")
 par(mfrow=c(1,1))
+
+
+#####################################################################
+### model checks
+
+# straight code from sweden fires not adapted yet
+
+### check with inla model
+prob<-m$summary.fitted.values[index[["est"]],"mean"]
+matprob<-apply(s.eff,2,function(i){
+  rnbinom(n=length(i),mu=exp(i),size=xi.eff[1])
+})
+o<-createDHARMa(simulatedResponse=matprob,observedResponse=xs$sp,fittedPredictedResponse=prob,integerResponse=TRUE)
+par(mfrow=c(2,2))
+plot(o,quantreg=TRUE)
+hist(o$scaledResiduals)
+
+par(mfrow=c(1,1))
+brks<-seq(0,max(matprob)*1.05,by=20)
+#ylim<-c(0,1000)
+#plot(c(0,max(matprob)),ylim=ylim)
+h1<-hist(matprob,breaks=brks,xlim=c(0,1000),freq=FALSE,border=NA)
+ylim<-range(h1$density)
+par(new=TRUE)
+h2<-hist(xs$sp,breaks=brks,xlim=c(0,1000),freq=FALSE,col=NA,border="darkred",lwd=2,ylim=range(ylim))
+
 
 
 #####################################################################
@@ -1031,6 +1048,30 @@ xx<-x[,.(n=.N,mean=mean(diff)),by="cut"][order(cut)][1:(5000/blocks),]
 xx<-droplevels(xx)
 plot(as.integer(xx$cut)+0.5,xx$mean,xaxt="n",type="b",cex=scales::rescale(xx$n,to=c(0.1,5)))
 axis(1,at=1:nlevels(xx$cut),label=as.integer(sapply(strsplit(gsub("\\(|\\]","",levels(xx$cut)),","),"[",1)),las=2,cex.axis=0.5)
+
+
+##################################
+### build a relative frequency map
+
+p<-m$summary.fitted.values[index[["map"]],"mean"] # the lambda is to back-transform on the original scale)
+rgp<-setValues(r,p)
+rr<-mask(rgp,buf)
+brks <- seq(min(p),max(p),by=0.1)
+cols<-colo.scale(300,rev(brewer.pal(11,"RdYlGn")))
+plot(rgp,col=cols,axes=FALSE,legend.shrink=1, legend.width=4,axis.args=list(at=pretty(brks,n=10), labels=pretty(brks,n=10)),legend.args=list(text='Abundance', side=4, font=2, line=2.3))
+plot(swediv,add=TRUE,border=gray(0,0.25),lwd=0.01)
+
+### sd
+p<-m$summary.fitted.values[index[["map"]],"sd"]
+gp<-SpatialPixelsDataFrame(g,data=data.frame(p=p))
+rgp<-raster(gp)
+brks <- seq(min(p),max(p),by=0.01)
+cols<-colo.scale(300,rev(brewer.pal(11,"RdYlGn")))
+plot(swediv,axes=TRUE)
+plot(rgp,col=cols,axes=FALSE,box="n",legend.shrink=1, legend.width=4,add=TRUE,axis.args=list(at=pretty(brks,n=10), labels=pretty(brks,n=10)),
+     legend.args=list(text='sd of predicted fire size', side=4, font=2, line=2.3))
+plot(swediv,add=TRUE,border=gray(0,0.25),lwd=0.01)
+
 
 
 
