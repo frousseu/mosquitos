@@ -579,7 +579,7 @@ rm(e,lf,dsbuffer,can,map,info);gc();gc()
 
 d$pch<-15
 x<-dcast(unique(d[,c("id","week","pch")]),id~week,value.var="pch")
-x<-melt(x,id=c("id","weeks"))
+x<-melt(x,id=c("id","week"))
 x$variable<-factor(x$variable,levels=unique(x$variable))
 x$id<-factor(x$id,levels=unique(x$id))
 par(mar=c(5,4,1,1))
@@ -597,7 +597,7 @@ axis(2,at=1:nlevels(x$id),labels=levels(x$id),las=2,cex.axis=0.35)
 # summary of most abundant species per year
 d[,lapply(.SD,sum,na.rm=TRUE),by=year,.SD=species][order(year),][,1:6]
 
-year<-2015
+year<-2014
 
 xs<-ds[ds$year%in%year,]
 sp<-names(xs)[grep("VEX_",names(xs))]
@@ -760,10 +760,14 @@ id.effect<-which(contents$tag==effect)
 ind.effect<-contents$start[id.effect]-1+(1:contents$length[id.effect])[index[["est"]]]
 samples.effect<-lapply(samples, function(x) x$latent[ind.effect])
 s.eff<-do.call("cbind",samples.effect)
-#xi.eff<-sapply(samples, function(x) x$hyperpar[grep("Rho",names(x$hyperpar))])
-xi.eff<-sapply(samples, function(x) x$hyperpar[grep("size",names(x$hyperpar))])
- #unique(sapply(strsplit(rownames(m$summary.fitted.values),"\\."),function(i){paste(i[1:min(2,length(i))],collapse=" ")}))
+nbsize<-sapply(samples, function(x) x$hyperpar[grep("size",names(x$hyperpar))])
+zeroprob<-sapply(samples, function(x) x$hyperpar[grep("probability",names(x$hyperpar))])
 
+### sample hyperpar
+# don't think this works, everything should be jointly sampled
+sampleshyper<-inla.hyperpar.sample(nsims,m)
+nbsize<-sampleshyper[,grep("size",dimnames(sampleshyper)[[2]])]
+zeroprob<-sampleshyper[,grep("probability",dimnames(sampleshyper)[[2]])]
 
 #save.image("mosquitos_model.RData")
 #load("mosquitos_model.RData")
@@ -1005,21 +1009,32 @@ par(mfrow=c(1,1))
 ### check with inla model
 prob<-m$summary.fitted.values[index[["est"]],"mean"]
 matprob<-apply(s.eff,2,function(i){
-  rnbinom(n=length(i),mu=exp(i),size=xi.eff[1])
+  # make sure this is the right way to do it and check if parameters are ok
+  # I'm sampling from the sampled hyperpar for each sims, but this is hacky and not correctly jointly sampled
+  rbinom(length(i),size=1,prob=1-sample(zeroprob,1))*rnbinom(n=length(i),mu=exp(i),size=sample(nbsize,1))
 })
 o<-createDHARMa(simulatedResponse=matprob,observedResponse=xs$sp,fittedPredictedResponse=prob,integerResponse=TRUE)
 par(mfrow=c(2,2))
 plot(o,quantreg=TRUE)
+testZeroInflation(o)
+testDispersion(o)
 hist(o$scaledResiduals)
 
 par(mfrow=c(1,1))
-brks<-seq(0,max(matprob)*1.05,by=20)
-#ylim<-c(0,1000)
-#plot(c(0,max(matprob)),ylim=ylim)
+brks<-seq(0,max(matprob)*1.05,by=15)
 h1<-hist(matprob,breaks=brks,xlim=c(0,1000),freq=FALSE,border=NA)
 ylim<-range(h1$density)
-par(new=TRUE)
-h2<-hist(xs$sp,breaks=brks,xlim=c(0,1000),freq=FALSE,col=NA,border="darkred",lwd=2,ylim=range(ylim))
+par(new=TRUE,lwd=3)
+h2<-hist(xs$sp,breaks=brks,xlim=c(0,1000),freq=FALSE,col=NA,border=alpha("darkred",0.5),lwd=3,ylim=range(ylim))
+par(lwd=1)
+
+plot(0,0,xlim=c(0,1000),ylim=c(0,max(h1$density)*1.07),type="n")
+lapply(1:ncol(matprob),function(i){
+  h<-hist(matprob[,i],breaks=brks,xlim=c(0,1000),freq=FALSE,plot=FALSE)
+  points(h$mids,h$density,pch=16,cex=2,col=gray(0,0.02))
+})
+points(h2$mids,h2$density,pch=16,cex=2,col=alpha("red",0.7))
+
 
 
 
