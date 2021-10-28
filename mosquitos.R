@@ -1,4 +1,5 @@
 
+### Packages #########################################
 library(sp)
 library(rgdal)
 library(scales)
@@ -35,8 +36,9 @@ library(rgdal)
 library(exactextractr)
 library(foreach)
 library(doParallel)
+library(DHARMa)
 
-### first set working directory
+# first set working directory
 # all files should be in this folder
 path<-"C:/Users/God/Documents/mosquitos/data"
 setwd(path)
@@ -99,8 +101,7 @@ que<-can[can$NAME_1=="Québec",]
 Q<-as(ms_simplify(st_as_sf(spTransform(que,CRS(prj))),keep=0.03),"Spatial")
 
 
-#####################################################
-### Read DATA #######################################
+### Read mosquito data #######################################
 
 # Do we have trap nights when counts were 0 ???
 
@@ -168,7 +169,7 @@ inspq$db<-"inspq"
 table(inspq$count>0)
 
 
-### POOL GDG AND INSPQ ############################
+### Pool GDG and INSPQ ############################
 
 ### all names are common to both database
 setdiff(names(gdg),names(inspq))
@@ -281,6 +282,7 @@ ds$latitude<-d$lat
 proj4string(ds)<-"+init=epsg:4326"
 ds<-spTransform(ds,CRS(prj))
 
+### Show trap data ######################################
 l<-split(ds[!ds$db%in%"map",],ds$year[!ds$db%in%"map"])
 par(mfrow=n2mfrow(length(l)),mar=c(0.25,0.25,0.25,0.25))
 lapply(l,function(i){
@@ -311,13 +313,29 @@ o<-over(ds,h)
 d<-d[!is.na(o),]
 ds<-ds[!is.na(o),]
 
+
+### Show trap weeks ###################################
+
+d$pch<-15
+x<-dcast(unique(d[,c("id","week","pch")]),id~week,value.var="pch")
+x<-melt(x,id=c("id","week"))
+x$variable<-factor(x$variable,levels=unique(x$variable))
+x$id<-factor(x$id,levels=unique(x$id))
+par(mar=c(5,4,1,1))
+plot(as.integer(x$variable),as.integer(x$id),pch=x$value,xaxt="n",yaxt="n",xlab="weeks",ylab="traps")
+axis(1,at=1:nlevels(x$variable),labels=levels(x$variable),las=2,cex.axis=0.5,srt=45)
+axis(2,at=1:nlevels(x$id),labels=levels(x$id),las=2,cex.axis=0.35)
+
+
+### Build mapping zone #############################
+
 mappingzone<-concaveman(coordinates(ds),2)
 mappingzone<-gBuffer(spPolygons(mappingzone,crs=CRS(proj4string(ds))),width=10)
 plot(mappingzone)
 plot(Q,add=TRUE,border="grey80")
 plot(ds,add=TRUE,pch=1)
 
-### Build prediction grid/locations ###################################
+### Build prediction grid ###################################
 
 # add data for prediction maps to ds with NAs for numbers of mosquitos
 # this allows to make the lcc/daymet extractions in a single step
@@ -364,8 +382,7 @@ o<-over(ds,mappingzone)
 ds<-ds[!is.na(o),]
 
 
-##############################
-### weather ##################
+### Weather data ##################
 
 ### code to download daymet data
 #rasterOptions(chunksize=1e+09,maxmemory=5e+10)
@@ -495,8 +512,8 @@ ds<-cbind(ds,vals)
 #p<-c(0.99,0.99,0.005,0.005,0.005)
 #sum(x*p)/sum(p)
 
-##############################
-### landcover ################
+
+### LULC data #########################################
 
 l<-list.files(file.path(path,"LULC/LULC/"),pattern=".tif",full.names=TRUE)
 l<-l[substr(l,nchar(l)-3,nchar(l))==".tif"]
@@ -550,6 +567,8 @@ ds$agriculture<-ds$crop+ds$pasture
 ds$natural<-ds$shrub+ds$forest
 
 
+#### Map LULC data #########################################
+
 xlim<-bbox(mappingzone)[1,]*1000
 ylim<-bbox(mappingzone)[2,]*1000
 #arg <- list(at=rat$ID, labels=rat$class)
@@ -574,39 +593,23 @@ rm(e,lf,dsbuffer,can,map,info);gc();gc()
 ### save the loaded data in a session
 #save.image("mosquitos.RData")
 
-################################################################
-### visualize trapping weeks ###################################
-
-d$pch<-15
-x<-dcast(unique(d[,c("id","week","pch")]),id~week,value.var="pch")
-x<-melt(x,id=c("id","week"))
-x$variable<-factor(x$variable,levels=unique(x$variable))
-x$id<-factor(x$id,levels=unique(x$id))
-par(mar=c(5,4,1,1))
-plot(as.integer(x$variable),as.integer(x$id),pch=x$value,xaxt="n",yaxt="n",xlab="weeks",ylab="traps")
-axis(1,at=1:nlevels(x$variable),labels=levels(x$variable),las=2,cex.axis=0.5,srt=45)
-axis(2,at=1:nlevels(x$id),labels=levels(x$id),las=2,cex.axis=0.35)
-
-
-################################################################
-### Models #####################################################
-################################################################
+## MODELS #####################################################
 
 #load("mosquitos.RData")
 
 # summary of most abundant species per year
 d[,lapply(.SD,sum,na.rm=TRUE),by=year,.SD=species][order(year),][,1:6]
 
-year<-2014
-
+#### Subset data #############################################
+year<-2015
 xs<-ds[ds$year%in%year,]
 sp<-names(xs)[grep("VEX_",names(xs))]
 xs$sp<-xs@data[,sp]
 xs<-xs[order(xs$week),]
-#xs<-xs[xs$week%in%paste0(year,"_W",25:35),]
-xs<-xs[substr(xs$week,7,8)%in%23:39,]
+##xs<-xs[xs$week%in%paste0(year,"_W",25:35),]
+xs<-xs[substr(xs$week,7,8)%in%25:37,]
 
-# build mesh
+#### Mesh #####################################################
 edge<-4
 domain <- inla.nonconvex.hull(coordinates(ds),convex=-0.075, resolution = c(100, 100))
 mesh<-inla.mesh.2d(loc.domain=coordinates(ds),max.edge=c(edge,3*edge),offset=c(edge,edge),cutoff=edge,boundary=domain,crs=CRS(proj4string(xs)))
@@ -614,35 +617,35 @@ plot(mesh,asp=1)
 plot(xs[!xs$db%in%"map",],add=TRUE,pch=1,col="red")
 plot(mappingzone,add=TRUE)
 
+
+
+#### Restrict predictions ######################################
 xsmap<-xs[xs$db=="map",]
 xs<-xs[xs$db!="map",]
-
-### restrict prediction to a given set of weeks/years
 keep<-expand.grid(year=year[length(year)],week=32)
 keep<-sort(sapply(1:nrow(keep),function(i){paste(keep$year[i],keep$week[i],sep="_W")}))
 xsmap<-xsmap[xsmap$week%in%keep,]
 
 
-## ----spde----------------------------------------------------------------
+#### SPDE #################################################
 spde <- inla.spde2.pcmatern(
   mesh=mesh, alpha=2, ### mesh and smoothness parameter
   constr = TRUE, # not exactly sure what this does
   prior.range=c(5, 0.01), ### P(practic.range<0.05)=0.01
   prior.sigma=c(4, 0.5)) ### P(sigma>1)=0.01
 
-### priors -------------------------------------------------
+#### Priors on hyperpar ##################################
 #h.spec <- list(theta=list(prior="pc.prec", param=c(0.5,0.5)), rho=list(prior="pc.cor1", param=c(0.9,0.9)))
 #h.spec <- list(theta = list(prior="pc.prec", param=c(1, NA)),
 #               rho = list(prior="pc.cor0", param=c(0.1, NA)))
 
 h.spec <- list(#theta=list(prior='pc.prec', param=c(0.5, 0.5)))#,
   rho = list(prior="pc.cor0", param=c(0.7,0.5)))
-
 prec.prior <- list(prior='pc.prec', param=c(1, 0.05))
 #h.spec <- list(theta = list(prior = "betacorrelation",param=c(1,3),initial=-1.098))
 #hist(rbeta(10000,1,3))
 
-## show priors on ar1
+# show priors on ar1
 co<-seq(-0.99,0.99,by=0.01)
 mu<-0.2
 alpha<-0.1
@@ -653,25 +656,20 @@ plot(co,dens,type="l",ylim=c(0,max(dens,na.rm=TRUE)))
 sig<-inla.pc.rprec(10000,u=1,alpha=0.05)
 hist(1/sig)
 
-
-
-## ----remote,echo=FALSE---------------------------------------------------
-##inla.setOption(inla.call='remote')
-
-## models
+#### Model formula ########################################
 model <- y ~ -1 + intercept + jul + jul2 + forest + urban + tmax15 + tmax1 + f(i, model=spde, group=i.group,control.group=list(model='ar1', hyper=h.spec)) 
+#model <- y ~ -1 + intercept + jul + jul2 + forest + urban + tmax15 + tmax1
 #model <- y ~ -1 + intercept + f(i, model=spde, group=i.group,control.group=list(model='ar1', hyper=h.spec)) 
 #formulae <- y ~ 0 + w + f(i, model=spde) + f(week,model="rw1")
 #formulae <- y ~ 0 + w + f(i, model=spde, group=i.group,control.group=list(model='exchangeable')) 
 v<-setdiff(all.vars(model),c("y","i","intercept","spde","i.group","h.spec")) 
 
-## priors on fixed effects
-vals<-list(intercept=1/5^2,default=1/30^2)
+#### Priors on fixed effects ##############################
+vals<-list(intercept=1/5^2,default=1/30^2) #5-30
 control.fixed<-list(prec=vals,mean=list(intercept=-20,default=0),expand.factor.strategy = "inla")
 
-### build newdata with variable values to submit
+#### Newdata ########################################
 n<-50
-
 v2<-v[grep("2",v)]
 v1<-setdiff(v,v2)
 lp<-newdata(x=xs@data[,v1,drop=FALSE],v=v1,n=n,fun=mean,list=FALSE)
@@ -688,30 +686,29 @@ if(length(v2)){
 #lpmed<-mmatrix(model,newdata(x=xs[,v,drop=FALSE],v=v,n=1,fun=median,list=FALSE)[[1]][rep(1,length(g)),])[[1]]
 
 
-## ----apred---------------------------------------------------------------
-
-## ----rfindex-------------------------------------------------------------
+#### Make index ##########################################
 k<-length(unique(xs$week))
 iset<-inla.spde.make.index('i',n.spde=spde$n.spde,n.group=k)
 
+
+#### A matrix ##############################################
 gs<-sort(unique(xs$week))
 gs<-match(xsmap$week,gs)
-
 Aest<-inla.spde.make.A(mesh=mesh,loc=coordinates(xs),group=as.integer(factor(xs$week))) 
 Amap<-inla.spde.make.A(mesh=mesh,loc=coordinates(xsmap),group=gs) 
 #Apre<-inla.spde.make.A(mesh=mesh,loc=matrix(c(600,5050),ncol=2)[rep(1,n),,drop=FALSE],group=rep(12,n))
-
 #Apre<-inla.spde.make.A(mesh=mesh,loc=coordinates(xsmap),group=as.integer(factor(xsmap$week)))
 
-isetmap<-lapply(iset,"[",iset$i.group%in%gs)
 
-## ----stack---------------------------------------------------------------
+#### Stacks ################################################
+isetmap<-lapply(iset,"[",iset$i.group%in%gs)
 stackest<-inla.stack(tag='est',data=list(y=xs$sp),A=list(Aest,1),effects=list(c(iset,list(intercept=1)),xs@data)) 
 stackmap<-inla.stack(tag='map',data=list(y=xsmap$sp),A=list(Amap,1),effects=list(c(isetmap,list(intercept=1)),xsmap@data)) 
 #stackpre<-inla.stack(tag='pre',data=list(y=xs$sp),A=list(Aest,1),effects=list(c(iset,list(intercept=1)),xs@data)) 
 stackfull<-inla.stack(stackest,stackmap)
 
-### add a stack for each focus variable
+
+#### Stack vars ############################################
 fixgroup<-ceiling(length(sort(unique(xs$week)))/2) # which group to use for var pred
 for(i in seq_along(v1)){
   le<-nrow(lp[[v1[i]]])
@@ -726,9 +723,11 @@ for(i in seq_along(v1)){
   stackfull<-inla.stack(stackfull,stack)
 }
 
+#### Full stack ############################################
 #stackfull<-inla.stack(stackest)
 
-### extract index for each stack
+
+#### Index #################################################
 index.est<-inla.stack.index(stackfull,tag="est")$data
 index.map<-inla.stack.index(stackfull,tag="map")$data
 index<-list(est=index.est,map=index.map)
@@ -738,6 +737,7 @@ for(i in seq_along(v1)){
 names(index)[3:length(index)]<-v1
 
 
+#### Model ##################################################
 m <- inla(model,data=inla.stack.data(stackfull), 
           control.predictor=list(compute=TRUE, A=inla.stack.A(stackfull),link=1), 
           #control.family=list(hyper=list(theta=prec.prior)), 
@@ -749,7 +749,8 @@ m <- inla(model,data=inla.stack.data(stackfull),
           #control.mode = list(result = m, restart = TRUE)), # to rerun the model with NA predictions according to https://06373067248184934733.googlegroups.com/attach/2662ebf61b581/sub.R?part=0.1&view=1&vt=ANaJVrHTFUnDqSbj6WTkDo-b_TftcP-dVVwK9SxPo9jmPvDiK58BmG7DpDdb0Ek6xypsqmCSTLDV1rczoY6Acg_Zb0VRPn1w2vRj3vzHYaHT8JMCEihVLbY
           family="zeroinflatednbinomial1")#"zeroinflatednbinomial1"
 
-### get posterior samples
+
+#### Posterior samples ####################################
 # from haakon bakk a, BTopic112
 nsims<-500
 samples<-inla.posterior.sample(nsims,m,num.threads="6:6")
@@ -763,20 +764,19 @@ s.eff<-do.call("cbind",samples.effect)
 nbsize<-sapply(samples, function(x) x$hyperpar[grep("size",names(x$hyperpar))])
 zeroprob<-sapply(samples, function(x) x$hyperpar[grep("probability",names(x$hyperpar))])
 
-### sample hyperpar
+
+#### Hyperpar samples #####################################
 # don't think this works, everything should be jointly sampled
 sampleshyper<-inla.hyperpar.sample(nsims,m)
 nbsize<-sampleshyper[,grep("size",dimnames(sampleshyper)[[2]])]
 zeroprob<-sampleshyper[,grep("probability",dimnames(sampleshyper)[[2]])]
 
+
 #save.image("mosquitos_model.RData")
 #load("mosquitos_model.RData")
 
 
-## ----sbeta---------------------------------------------------------------
-#round(cbind(observed=tapply(dat$y, dat$w, mean), m$summary.fixed), 4) 
-
-## ----echo=FALSE,fig.width=5.5,fig.height=5.5-----------------------------
+### Show hyperpars ########################################
 par(mfrow=c(2,2), mar=c(3,3,1,0.1), mgp=2:0)
 for (j in 1:4) {
   plot(m$marginals.hyper[[j]], type='l', 
@@ -785,29 +785,23 @@ for (j in 1:4) {
              params[2]^0.5, rho)[j], col=2)
 }
 
-## ----rfidx---------------------------------------------------------------
-#str(idat <- inla.stack.index(sdat, 'stdata')$data) 
+## Spatial field #########################################
 
-## ----meanrf--------------------------------------------------------------
-#cor(xs$sp, m$summary.linear.predictor$mean[idat])
-
-## ----projgrid------------------------------------------------------------
+#### Projection grid #############################################
 stepsize <- 0.5*1/1
 coords<-st_coordinates(st_cast(st_buffer(st_as_sf(xs),10),"MULTIPOINT"))
 nxy <- round(c(diff(range(coords[,1])), diff(range(coords[,2])))/stepsize)
 projgrid <- inla.mesh.projector(mesh, xlim=range(coords[,1]),ylim=range(coords[,2]), dims=nxy,crs=CRS(proj4string(xs)))
 
-## ----projpmean-----------------------------------------------------------
+#### Extract mean ###############################################
 xmean <- list()
 for (j in 1:length(unique(xs$week))){
   xmean[[j]] <- inla.mesh.project(projgrid,m$summary.random$i$mean[iset$i.group==j])
 }
 
-## ----inout---------------------------------------------------------------
+#### Set NAs ####################################################
 b<-gBuffer(gConvexHull(SpatialPoints(domain$loc,p=CRS(proj4string(ds)))),width=0.1,byid=FALSE)
 o <- over(SpatialPoints(projgrid$lattice$loc,p=CRS(proj4string(ds))),b)
-
-## ----setNAs---------------------------------------------------------------
 for (j in 1:length(unique(xs$week)))   xmean[[j]][is.na(o)] <- NA
 r<-stack(lapply(xmean,function(i){
   raster(nrows=nxy[2], ncols=nxy[1], xmn=min(projgrid$x), xmx=max(projgrid$x), ymn=min(projgrid$y), ymx=max(projgrid$y),crs=CRS(proj4string(xs)),vals=as.vector(i[,ncol(i):1])) ## some crazy ordering in INLA output be careful
@@ -815,13 +809,14 @@ r<-stack(lapply(xmean,function(i){
 }))
 names(r)<-unique(xs$week)
 
-# voir argument panel.number ou packets de layer
+#### Mask ########################################################
 xsbuff<-st_coordinates(st_cast(st_buffer(st_as_sf(xs),7),"MULTIPOINT"))[,1:2]
 buf<-concaveman(xsbuff,10)
 buf<-spPolygons(buf,crs=CRS(proj4string(xs)))
 buf<-gBuffer(buf,width=1)
 r<-mask(r,buf)
 
+#### Plot fields #################################################
 cols<-colo.scale(seq(range(values(r),na.rm=TRUE)[1],range(values(r),na.rm=TRUE)[2],length.out=200),c("darkblue","dodgerblue","ivory2","tomato2","firebrick4"),center=TRUE)#,"grey20"))
 xxs<-split(xs[!is.na(xs$sp),],xs$week[!is.na(xs$sp)])
 p.strip<-list(cex=0.65,lines=1,col="black")
@@ -831,78 +826,12 @@ levelplot(r,col.regions=cols,cuts=199,par.strip.text=p.strip,par.settings = list
   layer(sp.polygons(Q,col=gray(0,0.3)))
 par(mfrow=c(1,1))
 
-#plot(m$summary.fitted.values$mean[1:nrow(xs)],xs$sp)
-
-plot(m$marginals.hyperpar$`GroupRho for i`,type="l",xlim=c(0,1))
-vv<-seq(0.01,0.99,by=0.01)
-lines(vv,dbeta(vv,1,5))
-
-#levelplot(exp(r)-1,zscaleLog=10)
-
-x<-seq(min(xs$week),max(xs$week),by=0.1)
-y<-exp(m$summary.fixed[1,1]+m$summary.fixed[2,1]*x+m$summary.fixed[3,1]*x^2)
-#xx<-(20:40-mean(xs$week))/sd(xs$week)
-xx<-20:40
-plot(x,y,type="l",xaxt="n",xlim=range(xx))
-axis(1,at=xx,label=20:40)
+#plot(m$marginals.hyperpar$`GroupRho for i`,type="l",xlim=c(0,1))
+#vv<-seq(0.01,0.99,by=0.01)
+#lines(vv,dbeta(vv,1,5))
 
 
-#####################################
-### visualize spatial fields
-
-xlim<-bbox(mappingzone)[1,]
-ylim<-bbox(mappingzone)[1,]
-
-proj<-inla.mesh.projector(mesh,xlim=xlim,ylim=ylim,dims=c(300,300))
-
-mfield<-inla.mesh.project(projector=proj,field=m$summary.random[['i']][['mean']])
-sdfield<-inla.mesh.project(projector=proj,field=m$summary.random[['i']][['sd']])
-
-par(mfrow=c(1,2),mar=c(3,3,2,5))
-
-image.plot(list(x=proj$x,y=proj$y,z=mfield),col=viridis(100),asp=1,main="Spatial field (log scale)") 
-axis(1)
-axis(2)
-plot(swediv,add=TRUE,border=gray(0,0.5))
-# not sure how to represent the q quantile form observations...
-#plot(sizesdiv,pch=1,cex=0.1*m$summary.fitted.values[index.est,"mean"],col=gray(0.1,0.13),add=TRUE)
-#brks<-c(0.01,0.25,0.50,0.75,0.99)
-#legend("topleft",pch=1,pt.cex=3*brks,col=gray(0,0.3),legend=brks,bty="n",title="Probability of location\nbeing an actual fire",inset=c(0.02,0.05))
-
-image.plot(list(x=proj$x,y=proj$y,z=sdfield),col=viridis(100),asp=1,main="sd of spatial field (log scale)") 
-axis(1)
-axis(2)
-plot(swediv,add=TRUE,border=gray(0,0.5))
-#plot(sizesdiv,pch=1,cex=0.1*m$summary.fitted.values[index.est,"mean"],col=gray(0.1,0.13),add=TRUE)
-
-
-####################################################
-### graphical predictions with spatial uncertainty
-
-### this section is not that useful because it is a prediction for a given location, hence it includes uncertainty in the spatial field
-
-par(mfrow=c(round(sqrt(length(v1)),0),ceiling(sqrt(length(v1)))),mar=c(4,4,3,3),oma=c(0,10,0,0))
-for(i in seq_along(v1)){
-  p<-m$summary.fitted.values[index[[v1[i]]],c("0.025quant","0.5quant","0.975quant")]
-  #p[]<-lapply(p,transI)
-  dat<-data.frame(lp[[v1[i]]])
-  if(nrow(p)==n){
-    plot(dat[[v1[i]]],p[,2],type="l",ylim=c(0,min(c(max(p[,3]),max(xs$sp)))),xlab=v1[i],font=2,ylab="",lty=1,yaxt="n")
-    lines(dat[[v1[i]]],p[,1],lty=3,lwd=1)
-    lines(dat[[v1[i]]],p[,3],lty=3,lwd=1)
-    points(xs@data[,v1[i]],xs$sp,pch=16,col=gray(0,0.07))
-  }else{
-    plot(unique(sort(size[,v1[i]])),p[,2],type="l",ylim=c(0,100),xlab=v1[i],font=2,ylab="",lty=1,yaxt="n")
-    segments(x0=as.integer(unique(sort(size[,v[i]]))),x1=as.integer(unique(sort(size[,v[i]]))),y0=p[,1],y1=p[,3],lty=3,lwd=2)
-    points(jitter(as.integer(size[,v[i]]),fac=2),transI(size$tTotal),pch=16,col=gray(0,0.07))
-  }
-  axis(2,las=2)
-}
-mtext("Weekly number of mosquitos",outer=TRUE,cex=1.2,side=2,xpd=TRUE,line=2)
-
-
-##########################################################
-### generate predictions without spatial uncertainty
+## Marginal effects ########################################
 
 # page 263 in Zuur
 
@@ -938,7 +867,7 @@ for(k in seq_along(v1)){
     lines(vals,p[,2],lwd=3,col=gray(0,0.8))
     #lines(vals,p[,1],lty=3)
     #lines(vals,p[,3],lty=3)
-    polygon(c(vals,rev(vals),vals[1]),c(p[,1],rev(p[,3]),p[,1][1]),col=gray(0,0.1),border=NA)
+    polygon(c(vals,rev(vals),vals[1]),c(p[,1],rev(p[,3]),p[,1][1]),col=alpha("black",0.1),border=NA)
   }else{
     plot(unique(sort(size[,v[k]])),p[,2],type="l",ylim=c(0,100),xlab=v[k],font=2,ylab="",lty=1,yaxt="n")
     points(jitter(as.integer(size[,v[k]])),size$tTotal,pch=16,col=gray(0,0.1))
@@ -948,12 +877,9 @@ for(k in seq_along(v1)){
 }
 mtext(paste("Mosquitos per trap"),outer=TRUE,cex=1.2,side=2,xpd=TRUE,line=2)
 
-mm<-glmmTMB(sp~jul+jul2+forest+urban+tmax1+tmax15,data=xs@data[!is.na(xs$sp),],family=nbinom2())
 
 
-################################################
-### map predictions
-################################################
+## Map predictions ####################################
 
 quantities<-c("mean","X0.025quant","X0.975quant","sd")
 xsmappred<-cbind(xsmap[,"id"],data.frame(m$summary.fitted.values[index.map,gsub("X","",quantities)]))
@@ -972,7 +898,6 @@ buf<-spPolygons(buf,crs=CRS(proj4string(xs)))
 buf<-gBuffer(buf,width=1)
 pred<-mask(pred,buf)
 
-
 cols<-colo.scale(200,c("steelblue3","orange","red3","darkred"))
 colssd<-viridis(200)
 par(mfrow=n2mfrow(length(quantities)))
@@ -983,14 +908,12 @@ lapply(quantities[c(1,4,2,3)],function(i){
   plot(xs[xs$week%in%xsmap$week,],add=TRUE,cex=scales::rescale(xs$sp[xs$week%in%xsmap$week],to=c(0.3,10)),pch=16,lwd=3,col=gray(0,0.15))
   plot(Q,add=TRUE)
   plot(mappingzone,add=TRUE)
+  #plot(mesh,add=TRUE)
   mtext(side=3,line=-1.1,text=i,adj=0.99)
 })
 
 
-###############################################
-### range and sigma
-
-### this is to show the posteriors of the spatial field
+## Hyperpars posteriors #############################
 
 res <- inla.spde.result(m, "i", spde)
 par(mfrow=c(2,1))
@@ -1001,18 +924,17 @@ plot(inla.tmarginal(sqrt, res$marginals.variance.nominal[[1]]),
 par(mfrow=c(1,1))
 
 
-#####################################################################
-### model checks
+## Model checks ##############################################
 
-# straight code from sweden fires not adapted yet
+# make sure this is the right way to do it and check if parameters are ok. I'm sampling from the sampled hyperpar for each sims, but this is hacky and not correctly jointly sampled
 
-### check with inla model
+#### Simulated ###############################################
 prob<-m$summary.fitted.values[index[["est"]],"mean"]
 matprob<-apply(s.eff,2,function(i){
-  # make sure this is the right way to do it and check if parameters are ok
-  # I'm sampling from the sampled hyperpar for each sims, but this is hacky and not correctly jointly sampled
   rbinom(length(i),size=1,prob=1-sample(zeroprob,1))*rnbinom(n=length(i),mu=exp(i),size=sample(nbsize,1))
 })
+
+#### DHARMa plots ############################################
 o<-createDHARMa(simulatedResponse=matprob,observedResponse=xs$sp,fittedPredictedResponse=prob,integerResponse=TRUE)
 par(mfrow=c(2,2))
 plot(o,quantreg=TRUE)
@@ -1020,27 +942,27 @@ testZeroInflation(o)
 testDispersion(o)
 hist(o$scaledResiduals)
 
+#### Histograms ###############################################
 par(mfrow=c(1,1))
-brks<-seq(0,max(matprob)*1.05,by=15)
+brks<-unique(c(seq(0,200,by=5),seq(200,max(matprob)*1.05,by=25)))
 h1<-hist(matprob,breaks=brks,xlim=c(0,1000),freq=FALSE,border=NA)
 ylim<-range(h1$density)
 par(new=TRUE,lwd=3)
 h2<-hist(xs$sp,breaks=brks,xlim=c(0,1000),freq=FALSE,col=NA,border=alpha("darkred",0.5),lwd=3,ylim=range(ylim))
 par(lwd=1)
 
+#### Plot simulated and observed ##############################
 plot(0,0,xlim=c(0,1000),ylim=c(0,max(h1$density)*1.07),type="n")
-lapply(1:ncol(matprob),function(i){
+invisible(lapply(1:ncol(matprob),function(i){
   h<-hist(matprob[,i],breaks=brks,xlim=c(0,1000),freq=FALSE,plot=FALSE)
   points(h$mids,h$density,pch=16,cex=2,col=gray(0,0.02))
-})
-points(h2$mids,h2$density,pch=16,cex=2,col=alpha("red",0.7))
+}))
+points(h2$mids,h2$density,pch=16,cex=1.25,col=alpha("red",0.7))
 
 
+## Trap variograms ###########################################
 
-
-#####################################################################
-### Check structure (~variogram) in traps in relation to distance 
-
+# Check structure (~variogram) in traps in relation to distance 
 # to determine if there is a microhabitat/trap placement effect
 
 l<-split(dsbuffer,dsbuffer$date)
@@ -1065,31 +987,61 @@ plot(as.integer(xx$cut)+0.5,xx$mean,xaxt="n",type="b",cex=scales::rescale(xx$n,t
 axis(1,at=1:nlevels(xx$cut),label=as.integer(sapply(strsplit(gsub("\\(|\\]","",levels(xx$cut)),","),"[",1)),las=2,cex.axis=0.5)
 
 
-##################################
-### build a relative frequency map
 
-p<-m$summary.fitted.values[index[["map"]],"mean"] # the lambda is to back-transform on the original scale)
-rgp<-setValues(r,p)
-rr<-mask(rgp,buf)
-brks <- seq(min(p),max(p),by=0.1)
-cols<-colo.scale(300,rev(brewer.pal(11,"RdYlGn")))
-plot(rgp,col=cols,axes=FALSE,legend.shrink=1, legend.width=4,axis.args=list(at=pretty(brks,n=10), labels=pretty(brks,n=10)),legend.args=list(text='Abundance', side=4, font=2, line=2.3))
-plot(swediv,add=TRUE,border=gray(0,0.25),lwd=0.01)
+## Visualize spatial fields ######################################
 
-### sd
-p<-m$summary.fitted.values[index[["map"]],"sd"]
-gp<-SpatialPixelsDataFrame(g,data=data.frame(p=p))
-rgp<-raster(gp)
-brks <- seq(min(p),max(p),by=0.01)
-cols<-colo.scale(300,rev(brewer.pal(11,"RdYlGn")))
-plot(swediv,axes=TRUE)
-plot(rgp,col=cols,axes=FALSE,box="n",legend.shrink=1, legend.width=4,add=TRUE,axis.args=list(at=pretty(brks,n=10), labels=pretty(brks,n=10)),
-     legend.args=list(text='sd of predicted fire size', side=4, font=2, line=2.3))
-plot(swediv,add=TRUE,border=gray(0,0.25),lwd=0.01)
+xlim<-bbox(mappingzone)[1,]
+ylim<-bbox(mappingzone)[1,]
+
+proj<-inla.mesh.projector(mesh,xlim=xlim,ylim=ylim,dims=c(300,300))
+
+mfield<-inla.mesh.project(projector=proj,field=m$summary.random[['i']][['mean']])
+sdfield<-inla.mesh.project(projector=proj,field=m$summary.random[['i']][['sd']])
+
+par(mfrow=c(1,2),mar=c(3,3,2,5))
+
+image.plot(list(x=proj$x,y=proj$y,z=mfield),col=viridis(100),asp=1,main="Spatial field (log scale)") 
+axis(1)
+axis(2)
+plot(swediv,add=TRUE,border=gray(0,0.5))
+# not sure how to represent the q quantile form observations...
+#plot(sizesdiv,pch=1,cex=0.1*m$summary.fitted.values[index.est,"mean"],col=gray(0.1,0.13),add=TRUE)
+#brks<-c(0.01,0.25,0.50,0.75,0.99)
+#legend("topleft",pch=1,pt.cex=3*brks,col=gray(0,0.3),legend=brks,bty="n",title="Probability of location\nbeing an actual fire",inset=c(0.02,0.05))
+
+image.plot(list(x=proj$x,y=proj$y,z=sdfield),col=viridis(100),asp=1,main="sd of spatial field (log scale)") 
+axis(1)
+axis(2)
+plot(swediv,add=TRUE,border=gray(0,0.5))
+#plot(sizesdiv,pch=1,cex=0.1*m$summary.fitted.values[index.est,"mean"],col=gray(0.1,0.13),add=TRUE)
 
 
 
+### Graphical predictions with spatial uncertainty ############################
 
+# this section is not that useful because it is a prediction for a given location, hence it includes uncertainty in the spatial field
+
+par(mfrow=c(round(sqrt(length(v1)),0),ceiling(sqrt(length(v1)))),mar=c(4,4,3,3),oma=c(0,10,0,0))
+for(i in seq_along(v1)){
+  p<-m$summary.fitted.values[index[[v1[i]]],c("0.025quant","0.5quant","0.975quant")]
+  #p[]<-lapply(p,transI)
+  dat<-data.frame(lp[[v1[i]]])
+  if(nrow(p)==n){
+    plot(dat[[v1[i]]],p[,2],type="l",ylim=c(0,min(c(max(p[,3]),max(xs$sp)))),xlab=v1[i],font=2,ylab="",lty=1,yaxt="n")
+    lines(dat[[v1[i]]],p[,1],lty=3,lwd=1)
+    lines(dat[[v1[i]]],p[,3],lty=3,lwd=1)
+    points(xs@data[,v1[i]],xs$sp,pch=16,col=gray(0,0.07))
+  }else{
+    plot(unique(sort(size[,v1[i]])),p[,2],type="l",ylim=c(0,100),xlab=v1[i],font=2,ylab="",lty=1,yaxt="n")
+    segments(x0=as.integer(unique(sort(size[,v[i]]))),x1=as.integer(unique(sort(size[,v[i]]))),y0=p[,1],y1=p[,3],lty=3,lwd=2)
+    points(jitter(as.integer(size[,v[i]]),fac=2),transI(size$tTotal),pch=16,col=gray(0,0.07))
+  }
+  axis(2,las=2)
+}
+mtext("Weekly number of mosquitos",outer=TRUE,cex=1.2,side=2,xpd=TRUE,line=2)
+
+
+mm<-glmmTMB(sp~jul+jul2+forest+urban+tmax1+tmax15,data=xs@data[!is.na(xs$sp),],family=nbinom2())
 
 plot(mesh,asp=1)
 plot(mappingzone,add=TRUE)
