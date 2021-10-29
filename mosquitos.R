@@ -267,7 +267,7 @@ d$jul<-as.integer(format(as.Date(d$date),"%j"))
 #d$jul<-d$jul/100
 #d$jul2<-d$jul^2
 d$year<-substr(d$date,1,4)
-d$week<-format(as.Date(d$date),"%Y_W%V")
+d$week<-format(as.Date(d$date),"%Y_W%U")
 #d$year_week<-paste(d$year,d$week,sep="_")
 
 setorder(d,id,week)
@@ -350,7 +350,8 @@ plot(g,add=TRUE,cex=0.3)
 ee<-expand.grid(week=sort(unique(ds$week)))
 ee$id<-"map"
 ee$year<-as.integer(substr(ee$week,1,4))
-ee$date<-as.Date(ee$week,"%Y_W%V")
+# need to specify day of week when converting week to date see https://stackoverflow.com/questions/9380435/how-to-parse-year-week-number-in-r
+ee$date<-as.Date(paste0(ee$week,3),format="%Y_W%U%u")
 ee$jul<-as.integer(format(ee$date,"%j"))
 ee$date<-as.character(ee$date)
 ee$nights<-1
@@ -527,7 +528,7 @@ dsbuffer<-st_buffer(st_as_sf(spTransform(ds[!duplicated(ds$idlulc),],CRS(proj4st
 
 ### visualize buffers on a satellite map
 buffers<-st_transform(dsbuffer,4326)
-mapview(list(st_centroid(buffers),buffers),alpha=0.25)
+#mapview(list(st_centroid(buffers),buffers),alpha=0.25)
 
 
 # crop raster for faster computations
@@ -601,13 +602,15 @@ rm(e,lf,dsbuffer,can,map,info);gc();gc()
 d[,lapply(.SD,sum,na.rm=TRUE),by=year,.SD=species][order(year),][,1:6]
 
 #### Subset data #############################################
-year<-2015
+year<-2013;
+spcode<-"CPR_"
+weeks<-23:39
 xs<-ds[ds$year%in%year,]
-sp<-names(xs)[grep("VEX_",names(xs))]
+sp<-names(xs)[grep(spcode,names(xs))]
 xs$sp<-xs@data[,sp]
 xs<-xs[order(xs$week),]
-##xs<-xs[xs$week%in%paste0(year,"_W",25:35),]
-xs<-xs[substr(xs$week,7,8)%in%25:37,]
+##xs<-xs[xs$week%in%paste0(year,"_W",weeks),]
+xs<-xs[substr(xs$week,7,8)%in%weeks,]
 
 #### Mesh #####################################################
 edge<-4
@@ -631,8 +634,8 @@ xsmap<-xsmap[xsmap$week%in%keep,]
 spde <- inla.spde2.pcmatern(
   mesh=mesh, alpha=2, ### mesh and smoothness parameter
   constr = TRUE, # not exactly sure what this does
-  prior.range=c(5, 0.01), ### P(practic.range<0.05)=0.01
-  prior.sigma=c(4, 0.5)) ### P(sigma>1)=0.01
+  prior.range=c(5, 0.1), ### P(practic.range<0.05)=0.01
+  prior.sigma=c(1, 0.5)) ### P(sigma>1)=0.01
 
 #### Priors on hyperpar ##################################
 #h.spec <- list(theta=list(prior="pc.prec", param=c(0.5,0.5)), rho=list(prior="pc.cor1", param=c(0.9,0.9)))
@@ -764,9 +767,8 @@ s.eff<-do.call("cbind",samples.effect)
 nbsize<-sapply(samples, function(x) x$hyperpar[grep("size",names(x$hyperpar))])
 zeroprob<-sapply(samples, function(x) x$hyperpar[grep("probability",names(x$hyperpar))])
 
-
 #### Hyperpar samples #####################################
-# don't think this works, everything should be jointly sampled
+# I don't think this works, hyperpars cannot be sampled independently of fixed effects and everything should be sampled jointly, this will overestimate variability
 sampleshyper<-inla.hyperpar.sample(nsims,m)
 nbsize<-sampleshyper[,grep("size",dimnames(sampleshyper)[[2]])]
 zeroprob<-sampleshyper[,grep("probability",dimnames(sampleshyper)[[2]])]
@@ -940,11 +942,11 @@ par(mfrow=c(2,2))
 plot(o,quantreg=TRUE)
 testZeroInflation(o)
 testDispersion(o)
-hist(o$scaledResiduals)
+#hist(o$scaledResiduals)
 
 #### Histograms ###############################################
 par(mfrow=c(1,1))
-brks<-unique(c(seq(0,200,by=5),seq(200,max(matprob)*1.05,by=25)))
+brks<-unique(c(seq(0,100,by=5),seq(100,200,by=10),seq(200,max(matprob)*1.05,by=25)))
 h1<-hist(matprob,breaks=brks,xlim=c(0,1000),freq=FALSE,border=NA)
 ylim<-range(h1$density)
 par(new=TRUE,lwd=3)
