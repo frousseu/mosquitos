@@ -523,8 +523,13 @@ lulc<-stack(l)
 
 # build ids to get unique location/year
 ds$idlulc<-paste(ds$longitude,ds$latitude)
-# make buffers for unique ids
-dsbuffer<-st_buffer(st_as_sf(spTransform(ds[!duplicated(ds$idlulc),],CRS(proj4string(lulc)))),250)
+
+# make buffers of different widths for unique ids
+bwidth<-c(100,1000) # list any number of widths
+lbuffer<-lapply(bwidth,function(i){
+  st_buffer(st_as_sf(spTransform(ds[!duplicated(ds$idlulc),],CRS(proj4string(lulc)))),i)  
+})
+dsbuffer<-do.call("rbind",lbuffer)
 
 ### visualize buffers on a satellite map
 buffers<-st_transform(dsbuffer,4326)
@@ -537,35 +542,45 @@ lulc<-crop(lulc,extent(st_bbox(dsbuffer)))
 e<-exact_extract(lulc[["LULC2011"]],dsbuffer)
 
 l<-lapply(seq_along(e),function(i){
-  #cov<-cbind(classn=e[[i]][,"LULC2011"],area=e[[i]][,"coverage_fraction"]*res(lulc)[1]*res(lulc)[2])
-  #a<-aggregate(area~classn,data=cov,FUN=sum)
-  #a$area<-a$area/sum(a$area)
-  #a$loc<-i
-  # data.table version is faster
   cov<-data.table(classn=e[[i]][,"value"],area=e[[i]][,"coverage_fraction"]*res(lulc)[1]*res(lulc)[2])
   a<-cov[,.(area=sum(area)),by=.(classn)]
   a[,area:=area/sum(area)]
   a[,idlulc:=dsbuffer$idlulc[i]]
+  a[,bwidth:=rep(bwidth,each=length(e)/length(bwidth))[i]]
   cat("\r",paste(i,length(e),sep=" / "))
   a
 })
 l<-do.call("rbind",l)
 ld<-setDT(l)
-pcov<-dcast(ld,idlulc~classn,value.var="area",fill=0)
-table(rowSums(pcov[,-1])) # should expect only 1's
+pcov<-dcast(ld,idlulc+bwidth~classn,value.var="area",fill=0)
+table(rowSums(pcov[,-(1:2)])) # should expect only 1's
 
 lccnames<-as.data.frame(read_excel(file.path(path,"0_ListeReclassification.xlsx"),sheet="Reclassification",range="C52:D64"))
 names(lccnames)<-c("classn","orig")
 lccnames<-cbind(lccnames,class=c("clouds","water","barren","urban","wet","pond","marsh","swamp","crop","pasture","shrub","forest"))
 names(pcov)[-1]<-lccnames$class[match(names(pcov)[-1],lccnames$classn)]
 
+# combine some lcc
+pcov[,wetland:=wet+swamp+pond]
+pcov[,agriculture:=crop+pasture]
+pcov[,natural:=shrub+forest]
+
+# set names for each buffer size
+pcov<-lapply(split(pcov,pcov$bwidth),function(i){
+  setorder(i,idlulc)
+  names(i)[3:ncol(i)]<-paste0(names(i)[3:ncol(i)],i$bwidth[1])
+  i[,bwidth:=NULL]
+  i
+})
+# merge them to get a column by lcc/width
+pcov<-Reduce(function(...) merge(..., all=T),pcov)
+
 ### merge with obs
-#ds<-cbind(ds,pcov[,-1])
 ds<-merge(ds,pcov,by="idlulc",all.x=TRUE)
 
-ds$wetland<-ds$wet+ds$swamp+ds$marsh+ds$pond
-ds$agriculture<-ds$crop+ds$pasture
-ds$natural<-ds$shrub+ds$forest
+#ds$wetland<-ds$wet+ds$swamp+ds$marsh+ds$pond
+#ds$agriculture<-ds$crop+ds$pasture
+#ds$natural<-ds$shrub+ds$forest
 
 
 #### Map LULC data #########################################
@@ -602,9 +617,9 @@ rm(e,lf,dsbuffer,can,map,info);gc();gc()
 d[,lapply(.SD,sum,na.rm=TRUE),by=year,.SD=species][order(year),][,1:6]
 
 #### Subset data #############################################
-year<-2013;
-spcode<-"CPR_"
-weeks<-23:39
+year<-2015;
+spcode<-"VEX_"
+weeks<-24:38
 xs<-ds[ds$year%in%year,]
 sp<-names(xs)[grep(spcode,names(xs))]
 xs$sp<-xs@data[,sp]
@@ -613,7 +628,7 @@ xs<-xs[order(xs$week),]
 xs<-xs[substr(xs$week,7,8)%in%weeks,]
 
 #### Mesh #####################################################
-edge<-4
+edge<-5
 domain <- inla.nonconvex.hull(coordinates(ds),convex=-0.075, resolution = c(100, 100))
 mesh<-inla.mesh.2d(loc.domain=coordinates(ds),max.edge=c(edge,3*edge),offset=c(edge,edge),cutoff=edge,boundary=domain,crs=CRS(proj4string(xs)))
 plot(mesh,asp=1)
@@ -660,7 +675,7 @@ sig<-inla.pc.rprec(10000,u=1,alpha=0.05)
 hist(1/sig)
 
 #### Model formula ########################################
-model <- y ~ -1 + intercept + jul + jul2 + forest + urban + tmax15 + tmax1 + f(i, model=spde, group=i.group,control.group=list(model='ar1', hyper=h.spec)) 
+model <- y ~ -1 + intercept + jul + jul2 + forest100 + urban100 + tmax15 + tmax1 + f(i, model=spde, group=i.group,control.group=list(model='ar1', hyper=h.spec)) 
 #model <- y ~ -1 + intercept + jul + jul2 + forest + urban + tmax15 + tmax1
 #model <- y ~ -1 + intercept + f(i, model=spde, group=i.group,control.group=list(model='ar1', hyper=h.spec)) 
 #formulae <- y ~ 0 + w + f(i, model=spde) + f(week,model="rw1")
@@ -864,7 +879,7 @@ for(k in seq_along(v1)){
   p<-t(apply(p,1,function(i){c(quantile(i,0.0275),mean(i),quantile(i,0.975))}))
   if(nrow(lp[[v1[k]]])==n){
     vals<-lp[[v1[k]]][,v1[k]]
-    plot(vals,p[,2],type="l",ylim=c(0,100),xlab=v1[k],font=2,ylab="",lty=1,yaxt="n")
+    plot(vals,p[,2],type="l",ylim=c(0,200),xlab=v1[k],font=2,ylab="",lty=1,yaxt="n")
     points(xs@data[,v1[k]],xs$sp,pch=1,col=gray(0,0.1))
     lines(vals,p[,2],lwd=3,col=gray(0,0.8))
     #lines(vals,p[,1],lty=3)
@@ -900,18 +915,31 @@ buf<-spPolygons(buf,crs=CRS(proj4string(xs)))
 buf<-gBuffer(buf,width=1)
 pred<-mask(pred,buf)
 
+
 cols<-colo.scale(200,c("steelblue3","orange","red3","darkred"))
 colssd<-viridis(200)
-par(mfrow=n2mfrow(length(quantities)))
+par(mfrow=n2mfrow(length(quantities)),mar=c(1,0.5,1,5),bty="n")
 lapply(quantities[c(1,4,2,3)],function(i){
+  pred2<-log(pred)
+  f<-function(x){exp(x)}# exp vs identity
   col<-if(i=="sd"){colssd}else{cols}
-  zlim<-if(i%in%c("sd","mean")){NULL}else{range(values(pred[[quantities[1:3]]]),na.rm=TRUE)}
-  plot(pred[[i]],col=col,zlim=zlim)
-  plot(xs[xs$week%in%xsmap$week,],add=TRUE,cex=scales::rescale(xs$sp[xs$week%in%xsmap$week],to=c(0.3,10)),pch=16,lwd=3,col=gray(0,0.15))
-  plot(Q,add=TRUE)
-  plot(mappingzone,add=TRUE)
+  #if(i%in%c("sd","mean")){
+  if(i%in%quantities){
+    zlim<-NULL
+    axis.args=list(at=pretty(values(pred2[[i]])),labels=round(f(pretty(values(pred2[[i]]))),0),cex.axis=0.8,lwd=0,tck=-0.2,mgp=c(3,0.3,0),lwd.ticks=1)
+    legend.args=list(text='Nb of mosquitos / trap', side=4, font=2, line=-2.5, cex=0.8)
+  }else{
+    zlim<-range(values(pred2[[quantities[1:3]]]),na.rm=TRUE)
+    axis.args=list(at=c(pretty(zlim),range(values(pred2[[i]]),na.rm=TRUE)),labels=round(f(c(pretty(zlim),range(values(pred[[i]]),na.rm=TRUE))),0),cex.axis=0.8,lwd=0,tck=-0.2,mgp=c(3,0.3,0),lwd.ticks=1)
+    legend.args=list(text='Nb of mosquitos / trap', side=4, font=2, line=-2.5, cex=0.8)
+  }
+  
+  plot(pred2[[i]],col=col,zlim=zlim,legend.width=2.5, legend.shrink=1,axis.args=axis.args,legend.args=legend.args,axes=FALSE,box=FALSE)
+  plot(xs[xs$week%in%xsmap$week,],add=TRUE,cex=scales::rescale(xs$sp[xs$week%in%xsmap$week],to=c(0.5,10)),pch=16,lwd=3,col=gray(0,0.15))
+  plot(Q,add=TRUE,border=gray(0,0.15))
+  #plot(mappingzone,add=TRUE)
   #plot(mesh,add=TRUE)
-  mtext(side=3,line=-1.1,text=i,adj=0.99)
+  mtext(side=3,line=-1.1,text=i,adj=0.01,font=2,cex=2)
 })
 
 
