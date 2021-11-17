@@ -3,28 +3,19 @@
 library(sp)
 library(rgdal)
 library(scales)
-library(gstat)
-library(geoR)
-library(geostatsp)
 library(INLA)
 library(rgeos)
 library(FRutils)
-library(RColorBrewer)
-library(visreg)
 library(readxl)
-library(mgcv)
-library(qgam)
 library(raster) 
 library(rasterVis)
 library(data.table)
-library(plyr)
 library(alphahull)
 library(concaveman)
 library(mapview)
 library(fasterize)
 library(sf)
 library(velox)
-library(glmmTMB)
 library(viridis)
 library(foreach)
 library(doParallel)
@@ -265,7 +256,7 @@ d[d$date=="2011-07-12" & d$id=="TER001",]
 ### add info
 d$jul<-as.integer(format(as.Date(d$date),"%j"))
 #d$jul<-d$jul/100
-#d$jul2<-d$jul^2
+#d$julsquare<-d$jul^2
 d$year<-substr(d$date,1,4)
 d$week<-format(as.Date(d$date),"%Y_W%U")
 #d$year_week<-paste(d$year,d$week,sep="_")
@@ -329,7 +320,7 @@ axis(2,at=1:nlevels(x$id),labels=levels(x$id),las=2,cex.axis=0.35)
 
 ### Build mapping zone #############################
 
-mappingzone<-concaveman(coordinates(ds),2)
+mappingzone<-concaveman(coordinates(ds[ds$db!="map",]),2)
 mappingzone<-gBuffer(spPolygons(mappingzone,crs=CRS(proj4string(ds))),width=10)
 plot(mappingzone)
 plot(Q,add=TRUE,border="grey80")
@@ -341,7 +332,7 @@ plot(ds,add=TRUE,pch=1)
 # this allows to make the lcc/daymet extractions in a single step
 # and INLA does predictions for NA response values
 
-pgrid<-raster(ext=extent(mappingzone),res=c(2,2),crs=CRS(proj4string(mappingzone)))
+pgrid<-raster(ext=extent(mappingzone),res=c(1,1),crs=CRS(proj4string(mappingzone)))
 pgrid<-setValues(pgrid,1)
 g<-xyFromCell(pgrid,1:ncell(pgrid),spatial=TRUE)
 plot(pgrid)
@@ -375,6 +366,8 @@ setdiff(names(ds),names(map))
 setdiff(names(map),names(ds))
 
 map<-map[,names(ds)]
+# subset predictions only for a given week (reduces extractions times/memory use)
+map<-map[substr(map$week,6,8)%in%"W32",]
 
 ds<-rbind(ds,map)
 
@@ -387,88 +380,94 @@ ds<-ds[!is.na(o),]
 
 ### code to download daymet data
 #rasterOptions(chunksize=1e+09,maxmemory=5e+10)
-#download_daymet_tiles(#location = c(46.75,-77.5,45,-70),
+#download_daymet_tiles(location = c(46.75,-77.5,45,-70),
 ##  location = st_bbox(st_transform(st_as_sf(ds),crs=4326))[c(4,1,2,3)],
-#  location=c(ymax=45.9022729397129,xmin=-74.4357158151628,ymin=45.1889865783487,xmax=-72.8946830482002), # topleft and bottom right coordinates of ds object
+##  location=c(ymax=45.9022729397129,xmin=-74.4357158151628,ymin=45.1889865783487,xmax=-72.8946830482002), # topleft and bottom right coordinates of ds object
 #  start = 2003,
 #  end = 2016,
-#  param = "tmax",
+#  param = c("tmean","prcp"),
 #  path = file.path(path,"daymet"))
 
 # faster to stack rasters, summarize them to weekly values and then merge them, not merge and then summarize
 
-l<-list.files(file.path(path,"daymet"),full=TRUE,pattern="_2015_")
-g<-lapply(l,function(i){
-  r<-stack(i)[[1]]
-  r<-setValues(r,ifelse(is.na(values(r)),NA,as.integer(gsub(".nc","",tail(strsplit(i,"_")[[1]],1)))))
-  r
-})
-bb<-lapply(g,function(i){
-  st_as_sfc(st_bbox(i))
-})
-g<-Reduce(merge,g)
+weathervars<-c("tmax","prcp")
 
-plot(g[[1]])
-invisible(lapply(bb,plot,add=TRUE))
+for(v in seq_along(weathervars)){
 
-dsbuffer<-st_transform(st_as_sf(ds),crs=st_crs(g[[1]]))
-# the fun is to ensure that a tile is returned in case values are missing in the raster
-# assumes that the most common value is the tile number
-# it is possible the in some case the value returned will be in a neigbouring tile
-e<-extract(g,dsbuffer,buffer=2000,fun=function(i){names(rev(sort(table(i)))[1])})
-dsbuffer$tile<-e
-dsbuffer$year_tile<-paste(dsbuffer$year,dsbuffer$tile,sep="_")
+  l<-list.files(file.path(path,"daymet"),full=TRUE,pattern=paste0(weathervars[v],"_2015_"))
+  g<-lapply(l,function(i){
+    r<-stack(i)[[1]]
+    r<-setValues(r,ifelse(is.na(values(r)),NA,as.integer(gsub(".nc","",tail(strsplit(i,"_")[[1]],1)))))
+    r
+  })
+  bb<-lapply(g,function(i){
+    st_as_sfc(st_bbox(i))
+  })
+  g<-Reduce(merge,g)
 
-lf<-list.files(file.path(path,"daymet"),full=TRUE)
-lf<-lf[order(lf)]
-ids<-do.call("rbind",strsplit(lf,"_"))
-o<-order(ids[,3],ids[,2])
-ids<-ids[o,]
-lf<-lf[o]
-lf<-split(lf,paste(ids[,2],gsub(".nc","",ids[,3]),sep="_"))
-lf<-lapply(lf,function(i){
-  stack(i)
-})
-#lf2<-lapply(lf[1],function(i){
-#  # this fills missing values with the mean of neighbouring cells
-#  lras<-lapply(1:nlayers(i),function(j){
-#    focal(i[[j]],w=matrix(rep(1,3^2),ncol=3),fun=mean,na.rm=TRUE,NAonly=TRUE)
-#  })
-#  stack(lras)
-#})
+  plot(g[[1]])
+  invisible(lapply(bb,plot,add=TRUE))
 
-registerDoParallel(detectCores()-4) 
-getDoParWorkers()
+  dsbuffer<-st_transform(st_as_sf(ds),crs=st_crs(g[[1]]))
+  # the fun is to ensure that a tile is returned in case values are missing in the raster
+  # assumes that the most common value is the tile number
+  # it is possible the in some case the value returned will be in a neigbouring tile
+  e<-extract(g,dsbuffer,buffer=2000,fun=function(i){names(rev(sort(table(i)))[1])})
+  dsbuffer$tile<-e
+  dsbuffer$year_tile<-paste(dsbuffer$year,dsbuffer$tile,sep="_")
 
-ptemps<-c(1,15,90) # number of days over which to average weather values
+  lf<-list.files(file.path(path,"daymet"),full=TRUE,pattern=weathervars[v])
+  lf<-lf[order(lf)]
+  ids<-do.call("rbind",strsplit(lf,"_"))
+  o<-order(ids[,3],ids[,2])
+  ids<-ids[o,]
+  lf<-lf[o]
+  lf<-split(lf,paste(ids[,2],gsub(".nc","",ids[,3]),sep="_"))
+  lf<-lapply(lf,function(i){
+    stack(i)
+  })
+  #lf2<-lapply(lf[1],function(i){
+  #  # this fills missing values with the mean of neighbouring cells
+  #  lras<-lapply(1:nlayers(i),function(j){
+  #    focal(i[[j]],w=matrix(rep(1,3^2),ncol=3),fun=mean,na.rm=TRUE,NAonly=TRUE)
+  #  })
+  #  stack(lras)
+  #})
 
-#l<-lapply(seq_along(lf)[1:5],function(i){
-l<-foreach(i=seq_along(lf),.packages=c("raster","sf")) %do% {  
-  w<-which(dsbuffer$year_tile==names(lf)[i])
-  if(any(w)){
-    e<-extract(lf[[i]],dsbuffer[w,],method="bilinear") # some cells with NA so this takes neighbouring cells  
-    ll<-lapply(seq_along(w),function(j){
-      m<-match(dsbuffer$date[w[j]],gsub("\\.","-",gsub("X","",dimnames(e)[[2]])))
-      a<-sapply(ptemps,function(k){
-        mean(e[j,(m-k):m])
+  # not working cause needs too much ram
+  registerDoParallel(detectCores()-4) 
+  getDoParWorkers()
+
+  ptemps<-c(2,7,30,90) # number of days over which to average weather values
+
+  #l<-lapply(seq_along(lf)[1:5],function(i){
+  l<-foreach(i=seq_along(lf),.packages=c("raster","sf")) %do% { # parallel version needs too much ram 
+    w<-which(dsbuffer$year_tile==names(lf)[i])
+    if(any(w)){
+      e<-extract(lf[[i]],dsbuffer[w,],method="bilinear") # some cells with NA so this takes neighbouring cells  
+      ll<-lapply(seq_along(w),function(j){
+        m<-match(dsbuffer$date[w[j]],gsub("\\.","-",gsub("X","",dimnames(e)[[2]])))
+        a<-sapply(ptemps,function(k){
+          mean(e[j,(m-k):m])
+        })
+        a
       })
-      a
-    })
-    ll<-do.call("rbind",ll)  
-    #plot(lf[[i]][[1]])
-    #plot(st_geometry(dsbuffer[w,]),add=TRUE)
-    dimnames(ll)[[1]]<-w
-    cat("\r",paste(i,length(lf),sep=" / "))
-    ll
+      ll<-do.call("rbind",ll)  
+      #plot(lf[[i]][[1]])
+      #plot(st_geometry(dsbuffer[w,]),add=TRUE)
+      dimnames(ll)[[1]]<-w
+      cat("\r",paste(weathervars[v],i,length(lf),sep=" / "))
+      ll
+    }
   }
+
+  vals<-do.call("rbind",l)
+  vals<-vals[order(as.integer(dimnames(vals)[[1]])),]
+  vals<-as.data.frame(vals)
+  names(vals)<-paste0(weathervars[v],ptemps)
+  ds<-cbind(ds,vals)
+  
 }
-
-vals<-do.call("rbind",l)
-vals<-vals[order(as.integer(dimnames(vals)[[1]])),]
-vals<-as.data.frame(vals)
-names(vals)<-paste0("tmax",ptemps)
-ds<-cbind(ds,vals)
-
 
 #plot(st_geometry(st_transform(st_as_sf(ds),crs=crs(lf[[1]]))))
 #plot(st_geometry(st_transform(st_as_sf(Q),crs=crs(lf[[1]]))),axes=TRUE,add=TRUE)
@@ -525,7 +524,7 @@ lulc<-stack(l)
 ds$idlulc<-paste(ds$longitude,ds$latitude)
 
 # make buffers of different widths for unique ids
-bwidth<-c(100,1000) # list any number of widths
+bwidth<-c(50,1000) # list any number of widths
 lbuffer<-lapply(bwidth,function(i){
   st_buffer(st_as_sf(spTransform(ds[!duplicated(ds$idlulc),],CRS(proj4string(lulc)))),i)  
 })
@@ -599,12 +598,13 @@ plot(st_geometry(st_buffer(st_transform(st_as_sf(ds[ds$id!="map",]),proj4string(
 #legend(x=par("usr")[2],y=par("usr")[4],legend=paste(lccnames$class,lccnames$classn),fill=cols,bty="n",border=NA,cex=1.2,xpd=TRUE)
 
 ds$jul<-ds$jul/100
-ds$jul2<-ds$jul^2
+ds$julsquare<-ds$jul^2
 ds$db<-gsub("pred","map",ds$db)
 
-rev(sort(sapply(ls(),function(i){object.size(get(i))})))
+options(scipen=20)
+rev(sort(sapply(ls(),function(i){object.size(get(i))})))/1024^24
 
-rm(e,lf,dsbuffer,can,map,info);gc();gc()
+rm(e,lf,dsbuffer,can,map,info,coords,lbuffer,buffers,que,inspq,gdg);gc();gc()
 
 ### save the loaded data in a session
 #save.image("mosquitos.RData")
@@ -619,7 +619,7 @@ d[,lapply(.SD,sum,na.rm=TRUE),by=year,.SD=species][order(year),][,1:6]
 #### Subset data #############################################
 year<-2015;
 spcode<-"VEX_"
-weeks<-24:38
+weeks<-20:42
 xs<-ds[ds$year%in%year,]
 sp<-names(xs)[grep(spcode,names(xs))]
 xs$sp<-xs@data[,sp]
@@ -628,13 +628,17 @@ xs<-xs[order(xs$week),]
 xs<-xs[substr(xs$week,7,8)%in%weeks,]
 
 #### Mesh #####################################################
-edge<-5
-domain <- inla.nonconvex.hull(coordinates(ds),convex=-0.075, resolution = c(100, 100))
-mesh<-inla.mesh.2d(loc.domain=coordinates(ds),max.edge=c(edge,3*edge),offset=c(edge,edge),cutoff=edge,boundary=domain,crs=CRS(proj4string(xs)))
+edge<-7
+domain <- inla.nonconvex.hull(coordinates(ds),convex=-0.015, resolution = c(100, 100))
+mesh<-inla.mesh.2d(loc.domain=coordinates(ds),max.edge=c(edge,3*edge),offset=c(edge,2*edge),cutoff=edge,boundary=domain,crs=CRS(proj4string(xs)))
+#par(mfrow=c(1,2))
 plot(mesh,asp=1)
-plot(xs[!xs$db%in%"map",],add=TRUE,pch=1,col="red")
+plot(Q,col="grey90",border="white",add=TRUE,lwd=2)
+plot(mesh,asp=1,add=TRUE)
+plot(xs[!xs$db%in%"map",],add=TRUE,pch=16,col="forestgreen")
+#plot(xs,add=TRUE,pch=16,col=alpha("red",0.5))
 plot(mappingzone,add=TRUE)
-
+mtext(side=3,line=-2,text=paste("edge =",edge,"km"),font=2,cex=1.5)
 
 
 #### Restrict predictions ######################################
@@ -658,25 +662,45 @@ spde <- inla.spde2.pcmatern(
 #               rho = list(prior="pc.cor0", param=c(0.1, NA)))
 
 h.spec <- list(#theta=list(prior='pc.prec', param=c(0.5, 0.5)))#,
-  rho = list(prior="pc.cor0", param=c(0.7,0.5)))
+  #rho = list(prior="pc.cor0", param=c(0.7,0.3)))
+  rho = list(prior="pc.cor1", param=c(0.9,0.25)))
 prec.prior <- list(prior='pc.prec', param=c(1, 0.05))
 #h.spec <- list(theta = list(prior = "betacorrelation",param=c(1,3),initial=-1.098))
 #hist(rbeta(10000,1,3))
 
 # show priors on ar1
 co<-seq(-0.99,0.99,by=0.01)
-mu<-0.2
-alpha<-0.1
+mu<-h.spec$rho$param[1]
+alpha<-h.spec$rho$param[2]
 par(mfrow=c(1,3))
-hist(inla.pc.rcor0(10000,u=mu,alpha=alpha))
-dens<-inla.pc.dcor0(co,u=mu,alpha=alpha)
+hist(inla.pc.rcor1(10000,u=mu,alpha=alpha))
+dens<-inla.pc.dcor1(co,u=mu,alpha=alpha)
 plot(co,dens,type="l",ylim=c(0,max(dens,na.rm=TRUE)))
-sig<-inla.pc.rprec(10000,u=1,alpha=0.05)
-hist(1/sig)
+#sig<-inla.pc.rprec(10000,u=1,alpha=0.05)
+#hist(1/sig)
+
+# priors on zero inflation probability
+vals<-rnorm(10000,-2,1.5)
+hist(inla.link.invlogit(vals))
+hist(exp(vals)/(1+exp(vals)))
+
+
+# priors on nb size parameter (not working check inla docs...)
+theta<-7
+vals<-rgamma(10000,exp(-theta),exp(-theta))
+par(mfrow=c(1,2))
+hist(vals,main="Size parameter for Negative Binomial")
+mu<-5
+hist(rnbinom(10000,mu=mu,size=exp(vals)),main=paste("Simulated counts with mu =",mu))
+par(mfrow=c(1,1))
+inla.pc.dgamma(x, lambda = 1, log = FALSE)
+
 
 #### Model formula ########################################
-model <- y ~ -1 + intercept + jul + jul2 + forest100 + urban100 + tmax15 + tmax1 + f(i, model=spde, group=i.group,control.group=list(model='ar1', hyper=h.spec)) 
-#model <- y ~ -1 + intercept + jul + jul2 + forest + urban + tmax15 + tmax1
+model <- y ~ -1 + intercept + jul + julsquare + forest50 + urban50 + urban1000 + agriculture1000  + tmax7 + tmax2 + prcp30 + f(i, model=spde, group=i.group,control.group=list(model='ar1', hyper=h.spec))
+#model <- y ~ -1 + intercept + jul + julsquare + f(i, model=spde, group=i.group,control.group=list(model='ar1', hyper=h.spec)) 
+#model <- y ~ -1 + intercept + jul + julsquare + forest100 + urban100 + f(i, model=spde, group=i.group,control.group=list(model='ar1', hyper=h.spec)) 
+#model <- y ~ -1 + intercept + jul + julsquare + forest + urban + tmax15 + tmax1
 #model <- y ~ -1 + intercept + f(i, model=spde, group=i.group,control.group=list(model='ar1', hyper=h.spec)) 
 #formulae <- y ~ 0 + w + f(i, model=spde) + f(week,model="rw1")
 #formulae <- y ~ 0 + w + f(i, model=spde, group=i.group,control.group=list(model='exchangeable')) 
@@ -688,12 +712,12 @@ control.fixed<-list(prec=vals,mean=list(intercept=-20,default=0),expand.factor.s
 
 #### Newdata ########################################
 n<-50
-v2<-v[grep("2",v)]
+v2<-v[grep("square",v)]
 v1<-setdiff(v,v2)
 lp<-newdata(x=xs@data[,v1,drop=FALSE],v=v1,n=n,fun=mean,list=FALSE)
 if(length(v2)){
   lp<-lapply(lp,function(i){
-    a<-as.data.frame(lapply(i[,gsub("2","",v2),drop=FALSE],"^",2))
+    a<-as.data.frame(lapply(i[,gsub("square","",v2),drop=FALSE],"^",2))
     names(a)<-v2
     res<-cbind(i,a)
     res[,order(names(res))]
@@ -760,18 +784,19 @@ m <- inla(model,data=inla.stack.data(stackfull),
           control.predictor=list(compute=TRUE, A=inla.stack.A(stackfull),link=1), 
           #control.family=list(hyper=list(theta=prec.prior)), 
           control.fixed=control.fixed,
-          control.inla = list(strategy='adaptive',int.strategy = "eb"),
-          num.threads="6:6",
+          control.inla = list(strategy='gaussian',int.strategy = "eb"),
+          num.threads="4:4",
           verbose=TRUE,
-          control.compute=list(dic=FALSE,waic=FALSE,cpo=FALSE,config=TRUE),
+          control.compute=list(dic=TRUE,waic=FALSE,cpo=FALSE,config=TRUE),
           #control.mode = list(result = m, restart = TRUE)), # to rerun the model with NA predictions according to https://06373067248184934733.googlegroups.com/attach/2662ebf61b581/sub.R?part=0.1&view=1&vt=ANaJVrHTFUnDqSbj6WTkDo-b_TftcP-dVVwK9SxPo9jmPvDiK58BmG7DpDdb0Ek6xypsqmCSTLDV1rczoY6Acg_Zb0VRPn1w2vRj3vzHYaHT8JMCEihVLbY
           family="zeroinflatednbinomial1")#"zeroinflatednbinomial1"
 
 
 #### Posterior samples ####################################
+
 # from haakon bakk a, BTopic112
 nsims<-500
-samples<-inla.posterior.sample(nsims,m,num.threads="6:6")
+samples<-inla.posterior.sample(nsims,m,num.threads="4:4")
 m$misc$configs$contents
 contents<-m$misc$configs$contents
 effect<-"APredictor" # not sure if should use APredictor or Predictor
@@ -792,15 +817,17 @@ zeroprob<-sampleshyper[,grep("probability",dimnames(sampleshyper)[[2]])]
 #save.image("mosquitos_model.RData")
 #load("mosquitos_model.RData")
 
+#load("mosquito_models_do2.RData")
+
 
 ### Show hyperpars ########################################
-par(mfrow=c(2,2), mar=c(3,3,1,0.1), mgp=2:0)
-for (j in 1:4) {
-  plot(m$marginals.hyper[[j]], type='l', 
-       xlab=names(m$marginals.hyper)[j], ylab='Density')
-  abline(v=c(1/sd.y^2, sqrt(8)/params[1], 
-             params[2]^0.5, rho)[j], col=2)
+par(mfrow=n2mfrow(length(m$marginals.hyper),asp=1.49))
+for (j in 1:length(m$marginals.hyper)) {
+  k<-m$marginals.hyper[[j]][,2]>=1e-3*max(m$marginals.hyper[[j]][,2])
+  plot(m$marginals.hyper[[j]][,1][k],m$marginals.hyper[[j]][,2][k],type='l',xlab=names(m$marginals.hyper)[j],ylab='Density')
 }
+par(mfrow=c(1,1))
+
 
 ## Spatial field #########################################
 
@@ -906,7 +933,7 @@ pred<-lapply(seq_along(quantities),function(i){
 pred<-stack(pred)
 names(pred)<-quantities
 
-pred<-disaggregate(pred,fact=20,method="bilinear") # hack to make the map smoother
+pred<-disaggregate(pred,fact=5,method="bilinear") # hack to make the map smoother
 
 ### use tighter mapping zone instead of mappingzone
 xsbuff<-st_coordinates(st_cast(st_buffer(st_as_sf(xs),7),"MULTIPOINT"))[,1:2]
@@ -942,32 +969,24 @@ lapply(quantities[c(1,4,2,3)],function(i){
   mtext(side=3,line=-1.1,text=i,adj=0.01,font=2,cex=2)
 })
 
-
-## Hyperpars posteriors #############################
-
-res <- inla.spde.result(m, "i", spde)
-par(mfrow=c(2,1))
-plot(res$marginals.range.nominal[[1]],
-     type="l", main="Posterior density for range")
-plot(inla.tmarginal(sqrt, res$marginals.variance.nominal[[1]]),
-     type="l", main="Posterior density for std.dev.")
-par(mfrow=c(1,1))
-
-
 ## Model checks ##############################################
 
 # make sure this is the right way to do it and check if parameters are ok. I'm sampling from the sampled hyperpar for each sims, but this is hacky and not correctly jointly sampled
+
+# figure out if the predicted response used already includes the zero-inflation part. If so, the simulation of observations below is likely wrong. If not, meaning the predictor is the nbinom mean before zero-inflation, then the simulated value are probably ok.
 
 #### Simulated ###############################################
 prob<-m$summary.fitted.values[index[["est"]],"mean"]
 matprob<-apply(s.eff,2,function(i){
   rbinom(length(i),size=1,prob=1-sample(zeroprob,1))*rnbinom(n=length(i),mu=exp(i),size=sample(nbsize,1))
+  #1*rnbinom(n=length(i),mu=exp(i),size=sample(nbsize,1)) no zeroinflation
 })
 
 #### DHARMa plots ############################################
 o<-createDHARMa(simulatedResponse=matprob,observedResponse=xs$sp,fittedPredictedResponse=prob,integerResponse=TRUE)
 par(mfrow=c(2,2))
-plot(o,quantreg=TRUE)
+plotQQunif(o)
+plotResiduals(o)
 testZeroInflation(o)
 testDispersion(o)
 #hist(o$scaledResiduals)
@@ -988,6 +1007,17 @@ invisible(lapply(1:ncol(matprob),function(i){
   points(h$mids,h$density,pch=16,cex=2,col=gray(0,0.02))
 }))
 points(h2$mids,h2$density,pch=16,cex=1.25,col=alpha("red",0.7))
+
+
+## SPDE posteriors #############################
+
+res <- inla.spde.result(m, "i", spde)
+par(mfrow=c(2,1))
+plot(res$marginals.range.nominal[[1]],
+     type="l", main="Posterior density for range")
+plot(inla.tmarginal(sqrt, res$marginals.variance.nominal[[1]]),
+     type="l", main="Posterior density for std.dev.")
+par(mfrow=c(1,1))
 
 
 ## Trap variograms ###########################################
@@ -1071,7 +1101,7 @@ for(i in seq_along(v1)){
 mtext("Weekly number of mosquitos",outer=TRUE,cex=1.2,side=2,xpd=TRUE,line=2)
 
 
-mm<-glmmTMB(sp~jul+jul2+forest+urban+tmax1+tmax15,data=xs@data[!is.na(xs$sp),],family=nbinom2())
+mm<-glmmTMB(sp~jul+julsquare+forest+urban+tmax1+tmax15,data=xs@data[!is.na(xs$sp),],family=nbinom2())
 
 plot(mesh,asp=1)
 plot(mappingzone,add=TRUE)
