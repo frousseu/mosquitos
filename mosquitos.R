@@ -697,14 +697,14 @@ inla.pc.dgamma(x, lambda = 1, log = FALSE)
 
 
 #### Model formula ########################################
-model <- y ~ -1 + intercept + jul + julsquare + forest50 + urban50 + urban1000 + agriculture1000  + tmax7 + tmax2 + prcp30 + f(i, model=spde, group=i.group,control.group=list(model='ar1', hyper=h.spec))
-#model <- y ~ -1 + intercept + jul + julsquare + f(i, model=spde, group=i.group,control.group=list(model='ar1', hyper=h.spec)) 
-#model <- y ~ -1 + intercept + jul + julsquare + forest100 + urban100 + f(i, model=spde, group=i.group,control.group=list(model='ar1', hyper=h.spec)) 
+model <- y ~ -1 + intercept + jul + julsquare + forest50 + urban50 + urban1000 + agriculture1000  + tmax7 + tmax2 + prcp30 + f(spatial, model=spde, group=spatial.group,control.group=list(model='ar1', hyper=h.spec))
+#model <- y ~ -1 + intercept + jul + julsquare + f(spatial, model=spde, group=spatial.group,control.group=list(model='ar1', hyper=h.spec)) 
+#model <- y ~ -1 + intercept + jul + julsquare + forest100 + urban100 + f(spatial, model=spde, group=spatial.group,control.group=list(model='ar1', hyper=h.spec)) 
 #model <- y ~ -1 + intercept + jul + julsquare + forest + urban + tmax15 + tmax1
-#model <- y ~ -1 + intercept + f(i, model=spde, group=i.group,control.group=list(model='ar1', hyper=h.spec)) 
-#formulae <- y ~ 0 + w + f(i, model=spde) + f(week,model="rw1")
-#formulae <- y ~ 0 + w + f(i, model=spde, group=i.group,control.group=list(model='exchangeable')) 
-v<-setdiff(all.vars(model),c("y","i","intercept","spde","i.group","h.spec")) 
+#model <- y ~ -1 + intercept + f(spatial, model=spde, group=spatial.group,control.group=list(model='ar1', hyper=h.spec)) 
+#formulae <- y ~ 0 + w + f(spatial, model=spde) + f(week,model="rw1")
+#formulae <- y ~ 0 + w + f(spatial, model=spde, group=spatial.group,control.group=list(model='exchangeable')) 
+v<-setdiff(all.vars(model),c("y","spatial","intercept","spde","spatial.group","h.spec")) 
 
 #### Priors on fixed effects ##############################
 vals<-list(intercept=1/5^2,default=1/30^2) #5-30
@@ -730,7 +730,7 @@ if(length(v2)){
 
 #### Make index ##########################################
 k<-length(unique(xs$week))
-iset<-inla.spde.make.index("spde",n.spde=spde$n.spde,n.group=k)
+iset<-inla.spde.make.index("spatial",n.spde=spde$n.spde,n.group=k)
 
 
 #### A matrix ##############################################
@@ -743,7 +743,7 @@ Amap<-inla.spde.make.A(mesh=mesh,loc=coordinates(xsmap),group=gs)
 
 
 #### Stacks ################################################
-isetmap<-lapply(iset,"[",iset$i.group%in%gs)
+isetmap<-lapply(iset,"[",iset$spatial.group%in%gs)
 stackest<-inla.stack(tag='est',data=list(y=xs$sp),A=list(Aest,1),effects=list(c(iset,list(intercept=1)),xs@data)) 
 stackmap<-inla.stack(tag='map',data=list(y=xsmap$sp),A=list(Amap,1),effects=list(c(isetmap,list(intercept=1)),xsmap@data)) 
 #stackpre<-inla.stack(tag='pre',data=list(y=xs$sp),A=list(Aest,1),effects=list(c(iset,list(intercept=1)),xs@data)) 
@@ -761,7 +761,7 @@ for(i in seq_along(v1)){
     #AA<-Apn # for numerical variables
     AA<-inla.spde.make.A(mesh=mesh,loc=matrix(c(600,5050),ncol=2)[rep(1,n),,drop=FALSE],group=rep(fixgroup,n))
   }
-  stack<-inla.stack(tag=v1[i],data=list(y=NA),A=list(AA,1),effects=list(c(lapply(iset,"[",iset$i.group==fixgroup),list(intercept=1)),lp[[v1[i]]]))     
+  stack<-inla.stack(tag=v1[i],data=list(y=NA),A=list(AA,1),effects=list(c(lapply(iset,"[",iset$spatial.group==fixgroup),list(intercept=1)),lp[[v1[i]]]))     
   stackfull<-inla.stack(stackfull,stack)
 }
 
@@ -832,33 +832,40 @@ par(mfrow=c(1,1))
 ## Spatial field #########################################
 
 #### Projection grid #############################################
+
 stepsize <- 0.5*1/1
 coords<-st_coordinates(st_cast(st_buffer(st_as_sf(xs),10),"MULTIPOINT"))
 nxy <- round(c(diff(range(coords[,1])), diff(range(coords[,2])))/stepsize)
 projgrid <- inla.mesh.projector(mesh, xlim=range(coords[,1]),ylim=range(coords[,2]), dims=nxy,crs=CRS(proj4string(xs)))
 
-#### Extract mean ###############################################
-xmean <- list()
-for (j in 1:length(unique(xs$week))){
-  xmean[[j]] <- inla.mesh.project(projgrid,m$summary.random$i$mean[iset$i.group==j])
-}
 
-#### Set NAs ####################################################
-b<-gBuffer(gConvexHull(SpatialPoints(domain$loc,p=CRS(proj4string(ds)))),width=0.1,byid=FALSE)
-o <- over(SpatialPoints(projgrid$lattice$loc,p=CRS(proj4string(ds))),b)
-for (j in 1:length(unique(xs$week)))   xmean[[j]][is.na(o)] <- NA
-r<-stack(lapply(xmean,function(i){
-  raster(nrows=nxy[2], ncols=nxy[1], xmn=min(projgrid$x), xmx=max(projgrid$x), ymn=min(projgrid$y), ymx=max(projgrid$y),crs=CRS(proj4string(xs)),vals=as.vector(i[,ncol(i):1])) ## some crazy ordering in INLA output be careful
-  #raster(i)
-}))
-names(r)<-unique(xs$week)
+#### Extract mean and sd ###############################################
+vfield<-c("mean","sd")
+field<-list()
+for(i in seq_along(vfield)){
+  xmean <- list()
+  for (j in 1:length(unique(xs$week))){
+    xmean[[j]] <- inla.mesh.project(projgrid,m$summary.random$spatial[[vfield[i]]][iset$spatial.group==j])
+  }
+  #### Set NAs ####################################################
+  b<-gBuffer(gConvexHull(SpatialPoints(domain$loc,p=CRS(proj4string(ds)))),width=0.1,byid=FALSE)
+  o <- over(SpatialPoints(projgrid$lattice$loc,p=CRS(proj4string(ds))),b)
+  for (j in 1:length(unique(xs$week)))   xmean[[j]][is.na(o)] <- NA
+  r<-stack(lapply(xmean,function(i){
+    raster(nrows=nxy[2], ncols=nxy[1], xmn=min(projgrid$x), xmx=max(projgrid$x), ymn=min(projgrid$y), ymx=max(projgrid$y),crs=CRS(proj4string(xs)),vals=as.vector(i[,ncol(i):1])) ## some crazy ordering in INLA output be careful
+    #raster(i)
+  }))
+  names(r)<-unique(xs$week)
+  field[[i]]<-r
+}
+names(field)<-vfield
 
 #### Mask ########################################################
 xsbuff<-st_coordinates(st_cast(st_buffer(st_as_sf(xs),7),"MULTIPOINT"))[,1:2]
 buf<-concaveman(xsbuff,10)
 buf<-spPolygons(buf,crs=CRS(proj4string(xs)))
 buf<-gBuffer(buf,width=1)
-r<-mask(r,buf)
+r<-mask(field[["mean"]],buf)
 
 #### Plot fields #################################################
 cols<-colo.scale(seq(range(values(r),na.rm=TRUE)[1],range(values(r),na.rm=TRUE)[2],length.out=200),c("darkblue","dodgerblue","ivory2","tomato2","firebrick4"),center=TRUE)#,"grey20"))
@@ -870,7 +877,7 @@ levelplot(r,col.regions=cols,cuts=199,par.strip.text=p.strip,par.settings = list
   layer(sp.polygons(Q,col=gray(0,0.3)))
 par(mfrow=c(1,1))
 
-#plot(m$marginals.hyperpar$`GroupRho for i`,type="l",xlim=c(0,1))
+#plot(m$marginals.hyperpar$`GroupRho for spatial`,type="l",xlim=c(0,1))
 #vv<-seq(0.01,0.99,by=0.01)
 #lines(vv,dbeta(vv,1,5))
 
@@ -884,7 +891,7 @@ params<-dimnames(m$model.matrix)[[2]]
 nparams<-sapply(params,function(i){
   grep(paste0(i,":"),row.names(samples[[1]]$latent))  
 }) 
-nweights<-grep("spde",row.names(samples[[1]]$latent))
+nweights<-grep("spatial",row.names(samples[[1]]$latent))
 
 par(mfrow=n2mfrow(length(v1),asp=3.5/2),mar=c(4,3,2,2),oma=c(0,10,0,0))
 for(k in seq_along(v1)){
@@ -922,8 +929,35 @@ for(k in seq_along(v1)){
 mtext(paste("Mosquitos per trap"),outer=TRUE,cex=1.2,side=2,xpd=TRUE,line=2)
 
 
+## Marginal effects with spatial uncertainty ##########################
+
+# this section is not that useful because it is a prediction for a given location, hence it includes uncertainty in the spatial field
+
+par(mfrow=n2mfrow(length(v1),asp=1.5),mar=c(4,4,3,3),oma=c(0,10,0,0))
+for(i in seq_along(v1)){
+  p<-m$summary.fitted.values[index[[v1[i]]],c("0.025quant","0.5quant","0.975quant")]
+  #p[]<-lapply(p,transI)
+  dat<-data.frame(lp[[v1[i]]])
+  if(nrow(p)==n){
+    plot(dat[[v1[i]]],p[,2],type="l",ylim=c(0,min(c(max(p[,3]),max(xs$sp)))),xlab=v1[i],font=2,ylab="",lty=1,yaxt="n")
+    vals<-dat[[v1[i]]]
+    lines(dat[[v1[i]]],p[,1],lty=3,lwd=1)
+    lines(dat[[v1[i]]],p[,3],lty=3,lwd=1)
+    points(xs@data[,v1[i]],xs$sp,pch=16,col=gray(0,0.07))
+    polygon(c(vals,rev(vals),vals[1]),c(p[,1],rev(p[,3]),p[,1][1]),col=alpha("black",0.1),border=NA)
+  }else{
+    #plot(unique(sort(size[,v1[i]])),p[,2],type="l",ylim=c(0,100),xlab=v1[i],font=2,ylab="",lty=1,yaxt="n")
+    segments(x0=as.integer(unique(sort(size[,v[i]]))),x1=as.integer(unique(sort(size[,v[i]]))),y0=p[,1],y1=p[,3],lty=3,lwd=2)
+    points(jitter(as.integer(size[,v[i]]),fac=2),transI(size$tTotal),pch=16,col=gray(0,0.07))
+  }
+  axis(2,las=2)
+}
+mtext("Weekly number of mosquitos",outer=TRUE,cex=1.2,side=2,xpd=TRUE,line=2)
+
 
 ## Map predictions ####################################
+
+# The code for the graph below really sucks... should make it better...
 
 quantities<-c("mean","X0.025quant","X0.975quant","sd")
 xsmappred<-cbind(xsmap[,"id"],data.frame(m$summary.fitted.values[index.map,gsub("X","",quantities)]))
@@ -932,6 +966,13 @@ pred<-lapply(seq_along(quantities),function(i){
 })
 pred<-stack(pred)
 names(pred)<-quantities
+
+cw<-unique(xsmap$week) # watch out if there is more than one week predicted
+mcw<-match(paste0("X",cw),names(field[["mean"]]))
+meansd<-stack(lapply(field,"[[",mcw))
+meansd<-resample(meansd,pred[[1]])
+names(meansd)<-c("mean.spatial.field","sd.spatial.field")
+pred<-stack(pred,meansd)
 
 pred<-disaggregate(pred,fact=5,method="bilinear") # hack to make the map smoother
 
@@ -942,23 +983,43 @@ buf<-spPolygons(buf,crs=CRS(proj4string(xs)))
 buf<-gBuffer(buf,width=1)
 pred<-mask(pred,buf)
 
-
 cols<-colo.scale(200,c("steelblue3","orange","red3","darkred"))
 colssd<-viridis(200)
-par(mfrow=n2mfrow(length(quantities)),mar=c(1,0.5,1,5),bty="n")
-lapply(quantities[c(1,4,2,3)],function(i){
-  pred2<-log(pred)
-  f<-function(x){exp(x)}# exp vs identity
-  col<-if(i=="sd"){colssd}else{cols}
+colsfield<-colo.scale(seq(range(values(pred[["mean.spatial.field"]]),na.rm=TRUE)[1],range(values(pred[["mean.spatial.field"]]),na.rm=TRUE)[2],length.out=200),c("darkblue","dodgerblue","ivory2","tomato2","firebrick4"),center=TRUE)#,"grey20"))
+
+par(mfrow=n2mfrow(nlayers(pred),asp=1.5),mar=c(1,0.5,1,5),bty="n")
+lapply(names(pred)[c(1,2,5,4,3,6)],function(i){
+  if(i%in%names(meansd)){
+    pred2<-pred
+    f<-function(x){identity(x)}# exp vs identity
+  }else{
+    pred2<-log(pred)
+    f<-function(x){exp(x)}# exp vs identity
+  } # the .local warning NaNs produced comes from logging 0-negative values in mean/sd, not a problem
+  col<-if(i%in%c("sd","sd.spatial.field")){
+    colssd
+  }else{
+    if(i%in%"mean.spatial.field"){
+      colsfield
+    }else{
+      cols
+    }
+  }
   #if(i%in%c("sd","mean")){
   if(i%in%quantities){
     zlim<-NULL
     axis.args=list(at=pretty(values(pred2[[i]])),labels=round(f(pretty(values(pred2[[i]]))),0),cex.axis=0.8,lwd=0,tck=-0.2,mgp=c(3,0.3,0),lwd.ticks=1)
     legend.args=list(text='Nb of mosquitos / trap', side=4, font=2, line=-2.5, cex=0.8)
   }else{
-    zlim<-range(values(pred2[[quantities[1:3]]]),na.rm=TRUE)
-    axis.args=list(at=c(pretty(zlim),range(values(pred2[[i]]),na.rm=TRUE)),labels=round(f(c(pretty(zlim),range(values(pred[[i]]),na.rm=TRUE))),0),cex.axis=0.8,lwd=0,tck=-0.2,mgp=c(3,0.3,0),lwd.ticks=1)
-    legend.args=list(text='Nb of mosquitos / trap', side=4, font=2, line=-2.5, cex=0.8)
+    if(i%in%names(meansd)){
+      zlim<-NULL
+      axis.args=list(at=pretty(values(pred2[[i]])),labels=round(f(pretty(values(pred2[[i]]))),2),cex.axis=0.8,lwd=0,tck=-0.2,mgp=c(3,0.3,0),lwd.ticks=1)
+      legend.args=list(text='Nb of mosquitos / trap', side=4, font=2, line=-2.5, cex=0.8)
+    }else{
+      zlim<-range(values(pred2[[quantities[1:3]]]),na.rm=TRUE)
+      axis.args=list(at=c(pretty(zlim),range(values(pred2[[i]]),na.rm=TRUE)),labels=round(f(c(pretty(zlim),range(values(pred2[[i]]),na.rm=TRUE))),0),cex.axis=0.8,lwd=0,tck=-0.2,mgp=c(3,0.3,0),lwd.ticks=1)
+      legend.args=list(text='Nb of mosquitos / trap', side=4, font=2, line=-2.5, cex=0.8)
+    }
   }
   
   plot(pred2[[i]],col=col,zlim=zlim,legend.width=2.5, legend.shrink=1,axis.args=axis.args,legend.args=legend.args,axes=FALSE,box=FALSE)
@@ -968,6 +1029,7 @@ lapply(quantities[c(1,4,2,3)],function(i){
   #plot(mesh,add=TRUE)
   mtext(side=3,line=-1.1,text=i,adj=0.01,font=2,cex=2)
 })
+
 
 ## Model checks ##############################################
 
@@ -1011,7 +1073,7 @@ points(h2$mids,h2$density,pch=16,cex=1.25,col=alpha("red",0.7))
 
 ## SPDE posteriors #############################
 
-res <- inla.spde.result(m, "i", spde)
+res <- inla.spde.result(m, "spatial", spde)
 par(mfrow=c(2,1))
 plot(res$marginals.range.nominal[[1]],
      type="l", main="Posterior density for range")
@@ -1055,8 +1117,8 @@ ylim<-bbox(mappingzone)[1,]
 
 proj<-inla.mesh.projector(mesh,xlim=xlim,ylim=ylim,dims=c(300,300))
 
-mfield<-inla.mesh.project(projector=proj,field=m$summary.random[["spde"]][['mean']])
-sdfield<-inla.mesh.project(projector=proj,field=m$summary.random[["spde"]][['sd']])
+mfield<-inla.mesh.project(projector=proj,field=m$summary.random[["spatial"]][['mean']])
+sdfield<-inla.mesh.project(projector=proj,field=m$summary.random[["spatial"]][['sd']])
 
 par(mfrow=c(1,2),mar=c(3,3,2,5))
 
@@ -1079,26 +1141,6 @@ plot(swediv,add=TRUE,border=gray(0,0.5))
 
 ### Graphical predictions with spatial uncertainty ############################
 
-# this section is not that useful because it is a prediction for a given location, hence it includes uncertainty in the spatial field
-
-par(mfrow=c(round(sqrt(length(v1)),0),ceiling(sqrt(length(v1)))),mar=c(4,4,3,3),oma=c(0,10,0,0))
-for(i in seq_along(v1)){
-  p<-m$summary.fitted.values[index[[v1[i]]],c("0.025quant","0.5quant","0.975quant")]
-  #p[]<-lapply(p,transI)
-  dat<-data.frame(lp[[v1[i]]])
-  if(nrow(p)==n){
-    plot(dat[[v1[i]]],p[,2],type="l",ylim=c(0,min(c(max(p[,3]),max(xs$sp)))),xlab=v1[i],font=2,ylab="",lty=1,yaxt="n")
-    lines(dat[[v1[i]]],p[,1],lty=3,lwd=1)
-    lines(dat[[v1[i]]],p[,3],lty=3,lwd=1)
-    points(xs@data[,v1[i]],xs$sp,pch=16,col=gray(0,0.07))
-  }else{
-    plot(unique(sort(size[,v1[i]])),p[,2],type="l",ylim=c(0,100),xlab=v1[i],font=2,ylab="",lty=1,yaxt="n")
-    segments(x0=as.integer(unique(sort(size[,v[i]]))),x1=as.integer(unique(sort(size[,v[i]]))),y0=p[,1],y1=p[,3],lty=3,lwd=2)
-    points(jitter(as.integer(size[,v[i]]),fac=2),transI(size$tTotal),pch=16,col=gray(0,0.07))
-  }
-  axis(2,las=2)
-}
-mtext("Weekly number of mosquitos",outer=TRUE,cex=1.2,side=2,xpd=TRUE,line=2)
 
 
 mm<-glmmTMB(sp~jul+julsquare+forest+urban+tmax1+tmax15,data=xs@data[!is.na(xs$sp),],family=nbinom2())
