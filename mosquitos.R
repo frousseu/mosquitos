@@ -730,7 +730,7 @@ if(length(v2)){
 
 #### Make index ##########################################
 k<-length(unique(xs$week))
-iset<-inla.spde.make.index('i',n.spde=spde$n.spde,n.group=k)
+iset<-inla.spde.make.index("spde",n.spde=spde$n.spde,n.group=k)
 
 
 #### A matrix ##############################################
@@ -823,7 +823,7 @@ zeroprob<-sampleshyper[,grep("probability",dimnames(sampleshyper)[[2]])]
 ### Show hyperpars ########################################
 par(mfrow=n2mfrow(length(m$marginals.hyper),asp=1.49))
 for (j in 1:length(m$marginals.hyper)) {
-  k<-m$marginals.hyper[[j]][,2]>=1e-3*max(m$marginals.hyper[[j]][,2])
+  k<-m$marginals.hyper[[j]][,2]>=1e-5*max(m$marginals.hyper[[j]][,2])
   plot(m$marginals.hyper[[j]][,1][k],m$marginals.hyper[[j]][,2][k],type='l',xlab=names(m$marginals.hyper)[j],ylab='Density')
 }
 par(mfrow=c(1,1))
@@ -878,28 +878,28 @@ par(mfrow=c(1,1))
 ## Marginal effects ########################################
 
 # page 263 in Zuur
+table(sapply(strsplit(row.names(samples[[1]]$latent),":"),"[",1))
 
 params<-dimnames(m$model.matrix)[[2]]
 nparams<-sapply(params,function(i){
   grep(paste0(i,":"),row.names(samples[[1]]$latent))  
 }) 
-nweights<-grep("i",row.names(samples[[1]]$latent))
+nweights<-grep("spde",row.names(samples[[1]]$latent))
 
 par(mfrow=n2mfrow(length(v1),asp=3.5/2),mar=c(4,3,2,2),oma=c(0,10,0,0))
 for(k in seq_along(v1)){
   p<-lapply(1:nsims,function(i){
     betas<-samples[[i]]$latent[nparams]
     fixed<-cbind(intercept=1,as.matrix(lp[[v1[k]]][,names(nparams[-1])])) %*% betas # make sure betas and vars are in the same order
-    #fixed<-cbind(intercept=1,as.matrix(dat)) %*% betas
-    ### this if we want a spatial part
+    # this if we want a spatial part
     #wk<-samples[[i]]$latent[nweights]
-    #if(is.factor(xs@data[,v[k]])){
-    #  spatial<-as.matrix(inla.spde.make.A(mesh=mesh,loc=matrix(c(0.3,0.5),ncol=2)[rep(1,nlevels(size[,v[k]])),,drop=FALSE])) %*% wk
+    #if(is.factor(xs@data[,v[k]])){ # factors never in model (et)
+      #spatial<-as.matrix(inla.spde.make.A(mesh=mesh,loc=matrix(c(0.3,0.5),ncol=2)[rep(1,nlevels(size[,v[k]])),,drop=FALSE])) %*% wk
     #}else{
     #  spatial<-as.matrix(AA) %*% wk # stack was Apn in fire
     #}
     #p<-exp(fixed+spatial)
-    p<-exp(fixed)
+    p<-exp(fixed) # ignores spatial part
     p
   })
   p<-do.call("cbind",p)
@@ -1055,8 +1055,8 @@ ylim<-bbox(mappingzone)[1,]
 
 proj<-inla.mesh.projector(mesh,xlim=xlim,ylim=ylim,dims=c(300,300))
 
-mfield<-inla.mesh.project(projector=proj,field=m$summary.random[['i']][['mean']])
-sdfield<-inla.mesh.project(projector=proj,field=m$summary.random[['i']][['sd']])
+mfield<-inla.mesh.project(projector=proj,field=m$summary.random[["spde"]][['mean']])
+sdfield<-inla.mesh.project(projector=proj,field=m$summary.random[["spde"]][['sd']])
 
 par(mfrow=c(1,2),mar=c(3,3,2,5))
 
