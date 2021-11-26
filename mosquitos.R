@@ -273,7 +273,10 @@ ds$latitude<-d$lat
 proj4string(ds)<-"+init=epsg:4326"
 ds<-spTransform(ds,CRS(prj))
 
+
 ### Show trap data ######################################
+
+#### By year ###########################################
 l<-split(ds[!ds$db%in%"map",],ds$year[!ds$db%in%"map"])
 par(mfrow=n2mfrow(length(l)),mar=c(0.25,0.25,0.25,0.25))
 lapply(l,function(i){
@@ -281,12 +284,43 @@ lapply(l,function(i){
   print(nrow(x))
   plot(x,col="white")
   plot(Q,add=TRUE,col="grey90",border="white")
-  plot(x,add=TRUE,pch=16,cex=0.75,col=gray(0,0.9))
+  plot(x,add=TRUE,pch=16,cex=1,col=gray(0,0.75))
   mtext(i$year[1],side=3,adj=c(0,0),line=-1.25)
 })
 par(mfrow=c(1,1))
 
+#### By weeks ###########################################
+l<-split(ds[!ds$db%in%"map",],paste(ds$year[!ds$db%in%"map"],ds$week[!ds$db%in%"map"]))
+names(l)<-sapply(l,function(i){i$week[1]})
+par(mfrow=n2mfrow(length(l)),mar=c(0.1,0.1,0.1,0.1))
+lapply(l,function(i){
+  x<-i[!duplicated(i$longitude),]
+  print(nrow(x))
+  plot(x,col="white")
+  plot(Q,add=TRUE,col="grey90",border="white")
+  plot(x,add=TRUE,pch=16,cex=0.5,col=gray(0,0.75))
+  mtext(i$week[1],side=3,adj=c(0,0),line=-0.5,cex=0.4)
+})
+par(mfrow=c(1,1))
 
+#### Plot traps/weeks #####################################
+ee<-expand.grid(year=sort(unique(substr(names(l),1,4))),week=sort(unique(substr(names(l),6,8))))
+m<-match(apply(ee,1,function(i){paste(i[1],i[2],sep="_")}),names(l))
+ee$nbtraps<-sapply(m,function(i){if(is.na(i)){0}else{nrow(l[[i]])}})
+#ee$nbtraps<-ifelse(is.null(ee$nbtraps),0,ee$nbtraps)
+
+nbtraps<-split(ee,ee$year)
+par(mfrow=c(length(nbtraps),1),mar=c(0.5,3,0,0),oma=c(3,0,0,0))
+lapply(nbtraps,function(i){
+  b<-barplot(i$nbtraps,names.arg=if(identical(i,nbtraps[[length(nbtraps)]])){i$week}else{NULL},ylim=c(0,max(ee$nbtraps)),border=NA,col="forestgreen",xpd=FALSE,yaxt="n")
+  text(b[,1],rep(-15,nrow(i)),i$nbtraps,cex=0.75,xpd=TRUE)
+  mtext(side=3,line=-1.5,text=i$year[1],adj=0.005)
+  rect(par("usr")[1],par("usr")[3],par("usr")[2],par("usr")[4],col = gray(0,0.05),border=NA)
+  axis(2,las=TRUE)
+  #grid()
+})
+
+#### Keep what's in the zone #######################################
 plot(ds)
 plot(Q,add=TRUE)
 #l<-locator()
@@ -303,6 +337,14 @@ plot(h,add=TRUE)
 o<-over(ds,h)
 d<-d[!is.na(o),]
 ds<-ds[!is.na(o),]
+
+
+#### Remove weeks with few traps #################################
+# currently ignored, better to do this before running the models when subsetting
+d[,nbtrapweek:=.N,by=.(week)]
+k<-d$nbtrapweek>=0
+d<-d[k,]
+ds<-ds[k,]
 
 
 ### Show trap weeks ###################################
@@ -405,8 +447,8 @@ for(v in seq_along(weathervars)){
   })
   g<-Reduce(merge,g)
 
-  plot(g[[1]])
-  invisible(lapply(bb,plot,add=TRUE))
+  #plot(g[[1]])
+  #invisible(lapply(bb,plot,add=TRUE))
 
   dsbuffer<-st_transform(st_as_sf(ds),crs=st_crs(g[[1]]))
   # the fun is to ensure that a tile is returned in case values are missing in the raster
@@ -617,15 +659,23 @@ rm(e,lf,dsbuffer,can,map,info,coords,lbuffer,buffers,que,inspq,gdg);gc();gc()
 d[,lapply(.SD,sum,na.rm=TRUE),by=year,.SD=species][order(year),][,1:6]
 
 #### Subset data #############################################
-year<-2015;
+inla.setOption(inla.mode="experimental")
+year<-c(2015)#c(2003:2006,2013:2016);
+weeks<-10:50
 spcode<-"VEX_"
-weeks<-20:42
+lweeks<-lapply(year,function(i){list(i,weeks)})
+#lweeks<-list(list(2014,weeks),list(2015,29:32))
+weeks<-apply(do.call("rbind",lapply(lweeks,function(i){expand.grid(year=i[[1]],week=i[[2]])})),1,function(i){paste(i[1],i[2],sep="_W")})
 xs<-ds[ds$year%in%year,]
 sp<-names(xs)[grep(spcode,names(xs))]
 xs$sp<-xs@data[,sp]
+xs<-xs[xs$week%in%weeks,]
 xs<-xs[order(xs$week),]
-##xs<-xs[xs$week%in%paste0(year,"_W",weeks),]
-xs<-xs[substr(xs$week,7,8)%in%weeks,]
+a<-aggregate(sp~week,data=xs@data,FUN=function(i){length(i)})
+names(a)[2]<-"nbtraps"
+xs$nbtraps<-a$nbtraps[match(xs$week,a$week)]
+xs<-xs[xs$nbtraps>=0,]
+cat(paste(sort(unique(xs$week)),collapse=", "))
 
 #### Mesh #####################################################
 edge<-7
@@ -652,9 +702,9 @@ xsmap<-xsmap[xsmap$week%in%keep,]
 #### SPDE #################################################
 spde <- inla.spde2.pcmatern(
   mesh=mesh, alpha=2, ### mesh and smoothness parameter
-  constr = TRUE, # not exactly sure what this does
-  prior.range=c(5, 0.1), ### P(practic.range<0.05)=0.01
-  prior.sigma=c(1, 0.5)) ### P(sigma>1)=0.01
+  constr = FALSE, # not exactly sure what this does
+  prior.range=c(5, 0.01), ### P(practic.range<0.05)=0.01
+  prior.sigma=c(1, 0.05)) ### P(sigma>1)=0.01
 
 #### Priors on hyperpar ##################################
 #h.spec <- list(theta=list(prior="pc.prec", param=c(0.5,0.5)), rho=list(prior="pc.cor1", param=c(0.9,0.9)))
@@ -663,8 +713,8 @@ spde <- inla.spde2.pcmatern(
 
 h.spec <- list(#theta=list(prior='pc.prec', param=c(0.5, 0.5)))#,
   #rho = list(prior="pc.cor0", param=c(0.7,0.3)))
-  rho = list(prior="pc.cor1", param=c(0.9,0.25)))
-prec.prior <- list(prior='pc.prec', param=c(1, 0.05))
+  rho = list(prior="pc.cor1", param=c(0.9,0.25))) #0.9 0.25
+prec.prior <- list(prior='pc.prec', param=c(1, 0.5))
 #h.spec <- list(theta = list(prior = "betacorrelation",param=c(1,3),initial=-1.098))
 #hist(rbeta(10000,1,3))
 
@@ -766,7 +816,7 @@ for(i in seq_along(v1)){
 }
 
 #### Full stack ############################################
-#stackfull<-inla.stack(stackest)
+stackfull<-inla.stack(stackest)
 
 
 #### Index #################################################
@@ -983,9 +1033,9 @@ buf<-spPolygons(buf,crs=CRS(proj4string(xs)))
 buf<-gBuffer(buf,width=1)
 pred<-mask(pred,buf)
 
-cols<-colo.scale(200,c("steelblue3","orange","red3","darkred"))
-colssd<-viridis(200)
-colsfield<-colo.scale(seq(range(values(pred[["mean.spatial.field"]]),na.rm=TRUE)[1],range(values(pred[["mean.spatial.field"]]),na.rm=TRUE)[2],length.out=200),c("darkblue","dodgerblue","ivory2","tomato2","firebrick4"),center=TRUE)#,"grey20"))
+cols<-alpha(colo.scale(200,c("steelblue3","lightgoldenrod","orange","red3","darkred","grey10")),0.80)
+colssd<-rev(cividis(200))
+colsfield<-colo.scale(seq(range(values(pred[["mean.spatial.field"]]),na.rm=TRUE)[1],range(values(pred[["mean.spatial.field"]]),na.rm=TRUE)[2],length.out=200),c("navyblue","steelblue","ivory2","firebrick3","firebrick4"),center=TRUE)#,"grey20"))
 
 par(mfrow=n2mfrow(nlayers(pred),asp=1.5),mar=c(1,0.5,1,5),bty="n")
 lapply(names(pred)[c(1,2,5,4,3,6)],function(i){
@@ -1023,11 +1073,11 @@ lapply(names(pred)[c(1,2,5,4,3,6)],function(i){
   }
   
   plot(pred2[[i]],col=col,zlim=zlim,legend.width=2.5, legend.shrink=1,axis.args=axis.args,legend.args=legend.args,axes=FALSE,box=FALSE)
-  plot(xs[xs$week%in%xsmap$week,],add=TRUE,cex=scales::rescale(xs$sp[xs$week%in%xsmap$week],to=c(0.5,10)),pch=16,lwd=3,col=gray(0,0.15))
-  plot(Q,add=TRUE,border=gray(0,0.15))
+  plot(xs[xs$week%in%xsmap$week,],add=TRUE,cex=scales::rescale(xs$sp[xs$week%in%xsmap$week],to=c(0.5,10)),pch=1,lwd=1,col=gray(0,0.65))
+  plot(Q,add=TRUE,border=gray(0,0.25))
   #plot(mappingzone,add=TRUE)
   #plot(mesh,add=TRUE)
-  mtext(side=3,line=-1.1,text=i,adj=0.01,font=2,cex=2)
+  mtext(side=3,line=-3,text=i,adj=0.05,font=2,cex=2)
 })
 
 
