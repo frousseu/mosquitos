@@ -28,6 +28,7 @@ library(exactextractr)
 library(foreach)
 library(doParallel)
 library(DHARMa)
+library(corrplot)
 
 # first set working directory
 # all files should be in this folder
@@ -290,25 +291,32 @@ lapply(l,function(i){
 par(mfrow=c(1,1))
 
 #### By weeks ###########################################
-l<-split(ds[!ds$db%in%"map",],paste(ds$year[!ds$db%in%"map"],ds$week[!ds$db%in%"map"]))
+l<-split(ds[!ds$db%in%"map",],ds$week[!ds$db%in%"map"])
 names(l)<-sapply(l,function(i){i$week[1]})
-par(mfrow=n2mfrow(length(l)),mar=c(0.1,0.1,0.1,0.1))
-lapply(l,function(i){
-  x<-i[!duplicated(i$longitude),]
-  print(nrow(x))
-  plot(x,col="white")
-  plot(Q,add=TRUE,col="grey90",border="white")
-  plot(x,add=TRUE,pch=16,cex=0.5,col=gray(0,0.75))
-  mtext(i$week[1],side=3,adj=c(0,0),line=-0.5,cex=0.4)
+ee<-expand.grid(year=sort(unique(substr(names(l),1,4))),week=sort(unique(substr(names(l),6,8))))
+m<-match(apply(ee,1,function(i){paste(i[1],i[2],sep="_")}),names(l))
+ee$nbtraps<-sapply(m,function(i){if(is.na(i)){0}else{nrow(l[[i]])}})
+ee<-ee[order(ee$year,ee$week),]
+
+
+par(mfrow=c(length(unique(ds$year)),nrow(ee)/length(unique(ds$year))),mar=c(0.1,0.1,0.1,0.1),oma=c(1,1,1,1))
+lapply(1:nrow(ee),function(j){
+  m<-match(paste(ee[j,"year"],ee[j,"week"],sep="_"),names(l))
+  if(is.na(m)){
+    plot(1,1,type="n",axes=FALSE)
+  }else{
+    i<-l[[m]]
+    x<-i[!duplicated(i$longitude) & !duplicated(i$longitude),]
+    print(nrow(x))
+    plot(x,col="white",xlim=bbox(ds[ds$db!="map",])[1,],ylim=bbox(ds[ds$db!="map",])[2,])
+    plot(Q,add=TRUE,col="grey90",border="white")
+    plot(x,add=TRUE,pch=16,cex=0.5,col=gray(0,0.75))
+    mtext(i$week[1],side=3,adj=c(0,0),line=-0.5,cex=0.4)
+  }
 })
 par(mfrow=c(1,1))
 
 #### Plot traps/weeks #####################################
-ee<-expand.grid(year=sort(unique(substr(names(l),1,4))),week=sort(unique(substr(names(l),6,8))))
-m<-match(apply(ee,1,function(i){paste(i[1],i[2],sep="_")}),names(l))
-ee$nbtraps<-sapply(m,function(i){if(is.na(i)){0}else{nrow(l[[i]])}})
-#ee$nbtraps<-ifelse(is.null(ee$nbtraps),0,ee$nbtraps)
-
 nbtraps<-split(ee,ee$year)
 par(mfrow=c(length(nbtraps),1),mar=c(0.5,3,0,0),oma=c(3,0,0,0))
 lapply(nbtraps,function(i){
@@ -651,6 +659,18 @@ rm(e,lf,dsbuffer,can,map,info,coords,lbuffer,buffers,que,inspq,gdg);gc();gc()
 ### save the loaded data in a session
 #save.image("mosquitos.RData")
 
+## Correlations ###############################################
+
+vars<-names(ds)[grep("jul|tmax|prcp|forest|agriculture|water|urban|pond|swamp|pasture|crop|wet|barren",names(ds))]
+vars<-vars[-grep("CQ",vars)]
+corrplot(cor(ds@data[ds@data$db!="map",vars]),method="number",number.cex=0.5)
+
+par(mar=c(0,0,0,0),oma=c(4,4,1,1))
+plot(ds@data[ds@data$db!="map",vars[1:10]],pch=16,cex=0.5,col=gray(0,0.1))
+
+
+
+
 ## MODELS #####################################################
 
 #load("mosquitos.RData")
@@ -746,7 +766,7 @@ par(mfrow=c(1,1))
 inla.pc.dgamma(x, lambda = 1, log = FALSE)
 
 
-#### Model formula ########################################
+#### Formula ########################################
 model <- y ~ -1 + intercept + jul + julsquare + forest50 + urban50 + urban1000 + agriculture1000  + tmax7 + tmax2 + prcp30 + f(spatial, model=spde, group=spatial.group,control.group=list(model='ar1', hyper=h.spec))
 #model <- y ~ -1 + intercept + jul + julsquare + f(spatial, model=spde, group=spatial.group,control.group=list(model='ar1', hyper=h.spec)) 
 #model <- y ~ -1 + intercept + jul + julsquare + forest100 + urban100 + f(spatial, model=spde, group=spatial.group,control.group=list(model='ar1', hyper=h.spec)) 
@@ -816,7 +836,7 @@ for(i in seq_along(v1)){
 }
 
 #### Full stack ############################################
-stackfull<-inla.stack(stackest)
+#stackfull<-inla.stack(stackest)
 
 
 #### Index #################################################
@@ -845,7 +865,7 @@ m <- inla(model,data=inla.stack.data(stackfull),
 #### Posterior samples ####################################
 
 # from haakon bakk a, BTopic112
-nsims<-500
+nsims<-1000
 samples<-inla.posterior.sample(nsims,m,num.threads="4:4")
 m$misc$configs$contents
 contents<-m$misc$configs$contents
@@ -867,16 +887,22 @@ zeroprob<-sampleshyper[,grep("probability",dimnames(sampleshyper)[[2]])]
 #save.image("mosquitos_model.RData")
 #load("mosquitos_model.RData")
 
-#load("mosquito_models_do2.RData")
+#load("mosquito_models_do.RData")
 
 
 ### Show hyperpars ########################################
-par(mfrow=n2mfrow(length(m$marginals.hyper),asp=1.49))
-for (j in 1:length(m$marginals.hyper)) {
-  k<-m$marginals.hyper[[j]][,2]>=1e-5*max(m$marginals.hyper[[j]][,2])
-  plot(m$marginals.hyper[[j]][,1][k],m$marginals.hyper[[j]][,2][k],type='l',xlab=names(m$marginals.hyper)[j],ylab='Density')
+
+posteriors<-c(m$marginals.fixed,m$marginals.hyper)
+par(mfrow=n2mfrow(length(posteriors),asp=1.49),mar=c(3,2.5,1,1))
+for (j in 1:length(posteriors)) {
+  k<-posteriors[[j]][,2]>=1e-5*max(posteriors[[j]][,2])
+  posteriors[[j]]<-posteriors[[j]][k,]
+}
+for (j in 1:length(posteriors)) {
+  plot(posteriors[[j]][,1],posteriors[[j]][,2],type='l',xlab=names(posteriors)[j],ylab='Density',tcl=-0.2,mgp=c(1.5,0.45,0),xlim=NULL)#range(do.call("rbind",posteriors)[,1]))
 }
 par(mfrow=c(1,1))
+
 
 
 ## Spatial field #########################################
@@ -941,19 +967,20 @@ params<-dimnames(m$model.matrix)[[2]]
 nparams<-sapply(params,function(i){
   grep(paste0(i,":"),row.names(samples[[1]]$latent))  
 }) 
-nweights<-grep("spatial",row.names(samples[[1]]$latent))
+#table(sapply(strsplit(row.names(samples[[1]]$latent),":"),"[",1))
+nweights<-grep("spatial",row.names(samples[[1]]$latent))[iset$spatial.group==fixgroup]
 
-par(mfrow=n2mfrow(length(v1),asp=3.5/2),mar=c(4,3,2,2),oma=c(0,10,0,0))
+par(mfrow=n2mfrow(length(v1),asp=3.5/2),mar=c(3,2,1,1),oma=c(0,10,0,0))
 for(k in seq_along(v1)){
   p<-lapply(1:nsims,function(i){
     betas<-samples[[i]]$latent[nparams]
     fixed<-cbind(intercept=1,as.matrix(lp[[v1[k]]][,names(nparams[-1])])) %*% betas # make sure betas and vars are in the same order
     # this if we want a spatial part
-    #wk<-samples[[i]]$latent[nweights]
+    wk<-samples[[i]]$latent[nweights]
     #if(is.factor(xs@data[,v[k]])){ # factors never in model (et)
-      #spatial<-as.matrix(inla.spde.make.A(mesh=mesh,loc=matrix(c(0.3,0.5),ncol=2)[rep(1,nlevels(size[,v[k]])),,drop=FALSE])) %*% wk
+       #spatial<-as.matrix(inla.spde.make.A(mesh=mesh,loc=matrix(c(0.3,0.5),ncol=2)[rep(1,nlevels(size[,v[k]])),,drop=FALSE])) %*% wk
     #}else{
-    #  spatial<-as.matrix(AA) %*% wk # stack was Apn in fire
+      spatial<-as.matrix(AA) %*% rep(wk,fixgroup) # stack was Apn in fire
     #}
     #p<-exp(fixed+spatial)
     p<-exp(fixed) # ignores spatial part
@@ -963,16 +990,16 @@ for(k in seq_along(v1)){
   p<-t(apply(p,1,function(i){c(quantile(i,0.0275),mean(i),quantile(i,0.975))}))
   if(nrow(lp[[v1[k]]])==n){
     vals<-lp[[v1[k]]][,v1[k]]
-    plot(vals,p[,2],type="l",ylim=c(0,200),xlab=v1[k],font=2,ylab="",lty=1,yaxt="n")
+    plot(vals,p[,2],type="l",ylim=c(0,200),xlab=v1[k],font=2,ylab="",lty=1,yaxt="n",mgp=c(2,0.45,0),tcl=-0.3)
     points(xs@data[,v1[k]],xs$sp,pch=1,col=gray(0,0.1))
     lines(vals,p[,2],lwd=3,col=gray(0,0.8))
     #lines(vals,p[,1],lty=3)
     #lines(vals,p[,3],lty=3)
     polygon(c(vals,rev(vals),vals[1]),c(p[,1],rev(p[,3]),p[,1][1]),col=alpha("black",0.1),border=NA)
   }else{
-    plot(unique(sort(size[,v[k]])),p[,2],type="l",ylim=c(0,100),xlab=v[k],font=2,ylab="",lty=1,yaxt="n")
-    points(jitter(as.integer(size[,v[k]])),size$tTotal,pch=16,col=gray(0,0.1))
-    segments(x0=as.integer(unique(sort(size[,v[k]]))),x1=as.integer(unique(sort(size[,v[k]]))),y0=p[,1],y1=p[,3],lty=3)
+    #plot(unique(sort(size[,v[k]])),p[,2],type="l",ylim=c(0,100),xlab=v[k],font=2,ylab="",lty=1,yaxt="n")
+    #points(jitter(as.integer(size[,v[k]])),size$tTotal,pch=16,col=gray(0,0.1))
+    #segments(x0=as.integer(unique(sort(size[,v[k]]))),x1=as.integer(unique(sort(size[,v[k]]))),y0=p[,1],y1=p[,3],lty=3)
   }
   axis(2,las=2)
 }
@@ -983,13 +1010,13 @@ mtext(paste("Mosquitos per trap"),outer=TRUE,cex=1.2,side=2,xpd=TRUE,line=2)
 
 # this section is not that useful because it is a prediction for a given location, hence it includes uncertainty in the spatial field
 
-par(mfrow=n2mfrow(length(v1),asp=1.5),mar=c(4,4,3,3),oma=c(0,10,0,0))
+par(mfrow=n2mfrow(length(v1),asp=1.5),mar=c(3,3,1,1),oma=c(0,10,0,0))
 for(i in seq_along(v1)){
   p<-m$summary.fitted.values[index[[v1[i]]],c("0.025quant","0.5quant","0.975quant")]
   #p[]<-lapply(p,transI)
   dat<-data.frame(lp[[v1[i]]])
   if(nrow(p)==n){
-    plot(dat[[v1[i]]],p[,2],type="l",ylim=c(0,min(c(max(p[,3]),max(xs$sp)))),xlab=v1[i],font=2,ylab="",lty=1,yaxt="n")
+    plot(dat[[v1[i]]],p[,2],type="l",ylim=c(0,min(c(max(p[,3]),max(xs$sp)))),xlab=v1[i],font=2,ylab="",lty=1,yaxt="n",mgp=c(2,0.45,0),tcl=-0.3)
     vals<-dat[[v1[i]]]
     lines(dat[[v1[i]]],p[,1],lty=3,lwd=1)
     lines(dat[[v1[i]]],p[,3],lty=3,lwd=1)
@@ -1079,6 +1106,51 @@ lapply(names(pred)[c(1,2,5,4,3,6)],function(i){
   #plot(mesh,add=TRUE)
   mtext(side=3,line=-3,text=i,adj=0.05,font=2,cex=2)
 })
+
+## Map predictions with posteriors samples #############################
+
+# not done yet and not general enough
+
+params<-dimnames(m$model.matrix)[[2]]
+nparams<-sapply(params,function(i){
+  grep(paste0(i,":"),row.names(samples[[1]]$latent))  
+}) 
+#table(sapply(strsplit(row.names(samples[[1]]$latent),":"),"[",1))
+nweights<-grep("spatial",row.names(samples[[1]]$latent))[iset$spatial.group==unique(gs)]
+Amapmatrix<-as.matrix(Amap)
+
+#par(mfrow=n2mfrow(length(v1),asp=3.5/2),mar=c(3,2,1,1),oma=c(0,10,0,0))
+#for(k in seq_along(v1)){
+p<-lapply(1:nsims,function(i){
+  betas<-samples[[i]]$latent[nparams]
+  fixed<-cbind(intercept=1,as.matrix(xsmap@data[,names(nparams[-1])])) %*% betas # make sure betas and vars are in the same order
+  # this if we want a spatial part
+  wk<-samples[[i]]$latent[nweights]
+  #if(is.factor(xs@data[,v[k]])){ # factors never in model (et)
+  #spatial<-as.matrix(inla.spde.make.A(mesh=mesh,loc=matrix(c(0.3,0.5),ncol=2)[rep(1,nlevels(size[,v[k]])),,drop=FALSE])) %*% wk
+  #}else{
+  spatial<-Amapmatrix %*% rep(wk,unique(gs)) # stack was Apn in fire
+  #}
+  p<-exp(fixed+spatial)
+  #p<-exp(fixed) # ignores spatial part
+  #p<-spatial
+  print(i)
+  p
+})
+p<-do.call("cbind",p)
+p<-t(apply(p,1,function(i){c(quantile(i,0.0275),mean(i),quantile(i,0.975))}))
+p
+
+xsmap$preds<-p[,2]
+
+pr<-rasterize(xsmap,pgrid,field="preds",fun=mean)
+pr<-mask(pr,buf)
+pr<-disaggregate(pr,fact=5,method="bilinear")
+
+par(mfrow=c(1,2))
+plot(log(pred[[1]]))
+plot(log(pr))
+
 
 
 ## Model checks ##############################################
