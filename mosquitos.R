@@ -15,7 +15,7 @@ library(concaveman)
 library(mapview)
 library(fasterize)
 library(sf)
-library(velox)
+library(velox) 
 library(viridis)
 library(foreach)
 library(doParallel)
@@ -29,6 +29,8 @@ library(foreach)
 library(doParallel)
 library(DHARMa)
 library(corrplot)
+library(abind)
+library(mgcv)
 
 # first set working directory
 # all files should be in this folder
@@ -440,11 +442,13 @@ ds<-ds[!is.na(o),]
 
 # faster to stack rasters, summarize them to weekly values and then merge them, not merge and then summarize
 
-weathervars<-c("tmax","prcp")
+weathervars<-c("tmax","prcp","anom")
+#weathervars<-c("tmax","anom")
+#weathervars<-c("anom")
 
 for(v in seq_along(weathervars)){
 
-  l<-list.files(file.path(path,"daymet"),full=TRUE,pattern=paste0(weathervars[v],"_2015_"))
+  l<-list.files(file.path(path,"daymet"),full=TRUE,pattern=paste0("tmax","_2015_"))
   g<-lapply(l,function(i){
     r<-stack(i)[[1]]
     r<-setValues(r,ifelse(is.na(values(r)),NA,as.integer(gsub(".nc","",tail(strsplit(i,"_")[[1]],1)))))
@@ -476,6 +480,20 @@ for(v in seq_along(weathervars)){
   lf<-lapply(lf,function(i){
     stack(i)
   })
+  nameslf<-names(lf)
+  
+  if(weathervars[v]=="anom"){
+    lf<-lapply(seq_along(lf),function(i){
+      #r<-aggregate(i,2)
+      r<-lf[[i]]
+      names(r)<-paste0("X",substr(names(lf)[i],1,4),gsub("-",".",substr(seq.Date(as.Date("2010-01-01"),as.Date("2010-12-31"),1),5,10)))
+      r
+    })
+    names(lf)<-nameslf
+  }
+  
+  
+  
   #lf2<-lapply(lf[1],function(i){
   #  # this fills missing values with the mean of neighbouring cells
   #  lras<-lapply(1:nlayers(i),function(j){
@@ -563,6 +581,118 @@ for(v in seq_along(weathervars)){
 #sum(x*p)/sum(p)
 
 
+plot(ds@data[ds$db!="map",unique(c("jul",names(ds)[grep("tmax|prcp",names(ds))]))])
+
+
+### Weather normals ###################################
+
+library(raster)
+library(abind)
+library(mgcv)
+library(data.table)
+library(sf)
+library(viridis)
+library(rasterVis)
+
+path<-"C:/Users/God/Documents/mosquitos/data"
+
+lf<-list.files(file.path(path,"daymet"),full=TRUE,pattern="tmax")
+lf<-lf[order(lf)]
+ids<-do.call("rbind",strsplit(lf,"_"))
+o<-order(ids[,3],ids[,2])
+ids<-ids[o,]
+lf<-lf[o]
+lf<-split(lf,paste(ids[,2],gsub(".nc","",ids[,3]),sep="_"))
+lf<-lapply(lf,function(i){
+  stack(i)
+})
+
+#bbb<-lapply(lf,function(i){
+#  st_as_sfc(st_bbox(i),crs=st_crs(i))
+#})
+#bbb<-Reduce(st_union,bbb)
+#plot(st_geometry(bbb))
+#plot(st_geometry(st_transform(st_as_sf(Q),crs=st_crs(lr[[1]]))),add=TRUE)
+#for(i in seq_along(lf)){
+#  bb<-st_as_sfc(st_bbox(lf[[i]]),crs=st_crs(lf[[i]]))
+#  plot(bb,add=TRUE)
+#  text(st_coordinates(st_centroid(bb))[,1],st_coordinates(st_centroid(bb))[,2],label=sapply(strsplit(names(lf)[i],"_"),"[",2#))
+#}
+
+tiles<-paste0("_",gsub(".nc","",unique(sapply(strsplit(list.files(file.path(path,"daymet"),full=TRUE,pattern="tmax"),"_"),"[",3))))
+#tiles<-tiles[1]
+
+for(k in seq_along(tiles)){
+  
+  tile<-tiles[k]
+  g<-grep(tile,names(lf))
+  lr<-lf[g]
+  lr<-lapply(lr,aggregate,5)
+  a<-abind(lapply(lr,function(i){
+    a<-as.array(i)
+    dimnames(a)[[3]]<-names(i)
+    a
+  }))
+  ii<-expand.grid(i=seq(dim(a)[1]),j=seq(dim(a)[2]))
+  ts<-lapply(1:nrow(ii),function(x){
+    a[ii[x,"i"] ,ii[x,"j"],]
+  })
+  
+  empty<-rep(NA,365)
+  t1<-Sys.time()
+  an<-lapply(seq_along(ts),function(j){
+    i<-ts[[j]]
+    x<-data.frame(tmax=i)
+    x$date<-as.Date(names(i),format="X%Y.%m.%d")
+    x$jul<-as.integer(format(x$date,"%j"))
+    if(all(is.nan(x[,"tmax"]))){
+      p<-empty
+    }else{
+      #plot(x[,"jul"],x[,"tmax"],ylim=c(-25,33))
+      m<-gam(tmax~s(jul,bs="cc"),data=x)
+      p<-predict(m,data.frame(jul=1:365))
+      #lines(1:365,p,lwd=5,col=alpha("red",0.5))
+      #x
+    }
+    x$normal<-rep(p,nrow(x)/365)
+    x$anomaly<-x$tmax-x$normal
+    cat("\r",paste(k,length(tiles)," - ",j,length(ts),sep=" / "))
+    x
+    #matrix(c(x$normal,x$anomaly),ncol=2)
+  })
+  t2<-Sys.time()
+  t2-t1
+  
+  aa<-a
+  for(i in 1:nrow(ii)){
+    aa[ii[i,1],ii[i,2],]<-an[[i]]$anomaly
+    #print(i)
+  }
+  
+  aa<-lapply(split(1:dim(aa)[3], ceiling(1:dim(aa)[3]/365)),function(i){
+    aa[,,i]
+  })
+  
+  temp<-lapply(seq_along(lr),function(i){
+    r<-setValues(lr[[i]],aa[[1]])
+    names(r)<-names(lr[[i]])
+    r
+  })
+  names(temp)<-names(lr)
+  
+  
+  #levelplot(temp[[1]][[ceiling(seq(1,365,length.out=20))]],zlim=c(-8,0),col.regions=viridis(200),cuts=199,margin=FALSE) +
+  #  layer(sp.polygons(as(st_transform(st_as_sf(Q),crs=st_crs(lr[[1]])),"Spatial"),col=gray(0,0.25)))
+  
+  for(kk in seq_along(temp)){
+    writeRaster(temp[[kk]],filename=file.path(path,"daymet",paste0("anom_",names(temp)[kk])),format="CDF")
+  }
+  
+}
+
+
+
+
 ### LULC data #########################################
 
 l<-list.files(file.path(path,"LULC/LULC/"),pattern=".tif",full.names=TRUE)
@@ -610,7 +740,7 @@ lccnames<-cbind(lccnames,class=c("clouds","water","barren","urban","wet","pond",
 names(pcov)[-1]<-lccnames$class[match(names(pcov)[-1],lccnames$classn)]
 
 # combine some lcc
-pcov[,wetland:=wet+swamp+pond]
+pcov[,wetland:=wet+swamp+pond+marsh]
 pcov[,agriculture:=crop+pasture]
 pcov[,natural:=shrub+forest]
 
@@ -661,14 +791,62 @@ rm(e,lf,dsbuffer,can,map,info,coords,lbuffer,buffers,que,inspq,gdg);gc();gc()
 
 ## Correlations ###############################################
 
-vars<-names(ds)[grep("jul|tmax|prcp|forest|agriculture|water|urban|pond|swamp|pasture|crop|wet|barren",names(ds))]
+#### Pairwise #################################################
+vars<-names(ds)[grep("jul|tmax|prcp|anom|forest|agriculture|water|urban|pond|swamp|pasture|crop|wet|barren",names(ds))]
 vars<-vars[-grep("CQ",vars)]
 corrplot(cor(ds@data[ds@data$db!="map",vars]),method="number",number.cex=0.5)
 
 par(mar=c(0,0,0,0),oma=c(4,4,1,1))
-plot(ds@data[ds@data$db!="map",vars[1:10]],pch=16,cex=0.5,col=gray(0,0.1))
+plot(ds@data[ds@data$db!="map",vars[grep("jul|tmax|anom|prcp",vars)]],pch=16,cex=0.5,col=gray(0,0.1))
+
+#ws<-vars[grep("jul|tmax|prcp|anom",vars)]
+ws<-vars[grep("jul|anom",vars)]
+ws<-ws[-grep("square",ws)]
+par(mar=c(0,0,0,0),oma=c(4,4,1,1))
+plot(ds@data[ds@data$db!="map",ws],pch=16,cex=0.5,col=gray(0,0.075))
+
+ws<-vars[grep("agriculture|forest|shrub|urban|wetland",vars)]
+par(mar=c(0,0,0,0),oma=c(4,4,1,1))
+plot(ds@data[ds@data$db!="map",ws],pch=16,cex=0.5,col=gray(0,0.075))
+cor(ds@data[ds@data$db!="map",ws])
+
+#### VIF ######################################################
+
+### check vif for specific model
+mo<-lm(VEX_Aedes_vexans~jul+urban1000+forest1000+wetland1000+tmax7+prcp7,data=ds@data[ds@data$db!="map",])
+vif(mo)
+hist(unique(apply(ds@data[ds@data$db!="map",names(model.frame(mo)[,-1])],1,sum)),xlim=0:1)
+
+### check vif for all combinations of lcc and climate
+ws1<-vars[grep("agriculture|forest|shrub|urban|wetland",vars)]
+mo1<-combn(ws1,3,simplify=FALSE)
+ws2<-vars[grep("anom|prcp",vars)]
+mo2<-combn(ws2,3,simplify=FALSE)
+ee<-expand.grid(1:length(mo1),1:length(mo2))
+mo<-lapply(1:nrow(ee),function(i){c(mo1[[ee[i,1]]],mo2[[ee[i,2]]])})
+#ws<-vars[grep("agriculture|forest|shrub|urban|wetland|anom|prcp",vars)]
+#mo<-combn(ws,4,simplify=FALSE)
+registerDoParallel(detectCores()-1) 
+getDoParWorkers()
+v<-foreach(i=seq_along(mo),.packages=c("car","sp")) %dopar% {
+  f<-formula(paste("VEX_Aedes_vexans~jul+",paste(mo[[i]],collapse="+")))
+  mod<-lm(f,data=ds@data[ds@data$db!="map",])
+  #print(i)
+  vif(mod)  
+}
+v<-as.data.frame(do.call("rbind",v))
+names(v)<-paste0("vif",1:length(mo[[1]]))
+v<-cbind(model=sapply(mo,paste,collapse=" + "),v)
+v[apply(v,1,function(i){any(i[-1]>3)}),]
 
 
+vif(lm(VEX_Aedes_vexans~urban1000+forest1000+agriculture1000,data=ds@data[ds@data$db!="map",]))
+
+
+library(MASS)
+library(glmnet)
+d<-ds@data[ds@data$db!="map",]
+fit <- cv.glmnet(scale(as.matrix(d[,vars])), d$VEX_Aedes_vexans, family = negative.binomial(theta = 3))
 
 
 ## MODELS #####################################################
@@ -680,7 +858,7 @@ d[,lapply(.SD,sum,na.rm=TRUE),by=year,.SD=species][order(year),][,1:6]
 
 #### Subset data #############################################
 inla.setOption(inla.mode="experimental")
-year<-c(2015)#c(2003:2006,2013:2016);
+year<-c(2004)#c(2003:2006,2013:2016);
 weeks<-10:50
 spcode<-"VEX_"
 lweeks<-lapply(year,function(i){list(i,weeks)})
@@ -724,7 +902,7 @@ spde <- inla.spde2.pcmatern(
   mesh=mesh, alpha=2, ### mesh and smoothness parameter
   constr = FALSE, # not exactly sure what this does
   prior.range=c(5, 0.01), ### P(practic.range<0.05)=0.01
-  prior.sigma=c(1, 0.05)) ### P(sigma>1)=0.01
+  prior.sigma=c(1, 0.01)) ### P(sigma>1)=0.01
 
 #### Priors on hyperpar ##################################
 #h.spec <- list(theta=list(prior="pc.prec", param=c(0.5,0.5)), rho=list(prior="pc.cor1", param=c(0.9,0.9)))
@@ -740,8 +918,8 @@ prec.prior <- list(prior='pc.prec', param=c(1, 0.5))
 
 # show priors on ar1
 co<-seq(-0.99,0.99,by=0.01)
-mu<-h.spec$rho$param[1]
-alpha<-h.spec$rho$param[2]
+mu<-0.99#h.spec$rho$param[1]
+alpha<-0.9999#h.spec$rho$param[2]
 par(mfrow=c(1,3))
 hist(inla.pc.rcor1(10000,u=mu,alpha=alpha))
 dens<-inla.pc.dcor1(co,u=mu,alpha=alpha)
@@ -767,8 +945,8 @@ inla.pc.dgamma(x, lambda = 1, log = FALSE)
 
 
 #### Formula ########################################
-model <- y ~ -1 + intercept + jul + julsquare + forest50 + urban50 + urban1000 + agriculture1000  + tmax7 + tmax2 + prcp30 + f(spatial, model=spde, group=spatial.group,control.group=list(model='ar1', hyper=h.spec))
-#model <- y ~ -1 + intercept + jul + julsquare + f(spatial, model=spde, group=spatial.group,control.group=list(model='ar1', hyper=h.spec)) 
+#model <- y ~ -1 + intercept + jul + julsquare + forest50 + urban50 + urban1000 + agriculture1000  + tmax7 + tmax2 + prcp30 + f(spatial, model=spde, group=spatial.group,control.group=list(model='ar1', hyper=h.spec))
+model <- y ~ -1 + intercept + jul + julsquare + f(spatial, model=spde, group=spatial.group,control.group=list(model='ar1', hyper=h.spec)) 
 #model <- y ~ -1 + intercept + jul + julsquare + forest100 + urban100 + f(spatial, model=spde, group=spatial.group,control.group=list(model='ar1', hyper=h.spec)) 
 #model <- y ~ -1 + intercept + jul + julsquare + forest + urban + tmax15 + tmax1
 #model <- y ~ -1 + intercept + f(spatial, model=spde, group=spatial.group,control.group=list(model='ar1', hyper=h.spec)) 
@@ -865,7 +1043,7 @@ m <- inla(model,data=inla.stack.data(stackfull),
 #### Posterior samples ####################################
 
 # from haakon bakk a, BTopic112
-nsims<-1000
+nsims<-500
 samples<-inla.posterior.sample(nsims,m,num.threads="4:4")
 m$misc$configs$contents
 contents<-m$misc$configs$contents
@@ -990,7 +1168,7 @@ for(k in seq_along(v1)){
   p<-t(apply(p,1,function(i){c(quantile(i,0.0275),mean(i),quantile(i,0.975))}))
   if(nrow(lp[[v1[k]]])==n){
     vals<-lp[[v1[k]]][,v1[k]]
-    plot(vals,p[,2],type="l",ylim=c(0,200),xlab=v1[k],font=2,ylab="",lty=1,yaxt="n",mgp=c(2,0.45,0),tcl=-0.3)
+    plot(vals,p[,2],type="l",ylim=c(0,500),xlab=v1[k],font=2,ylab="",lty=1,yaxt="n",mgp=c(2,0.45,0),tcl=-0.3)
     points(xs@data[,v1[k]],xs$sp,pch=1,col=gray(0,0.1))
     lines(vals,p[,2],lwd=3,col=gray(0,0.8))
     #lines(vals,p[,1],lty=3)
@@ -1148,8 +1326,8 @@ pr<-mask(pr,buf)
 pr<-disaggregate(pr,fact=5,method="bilinear")
 
 par(mfrow=c(1,2))
-plot(log(pred[[1]]))
-plot(log(pr))
+plot(pred[[1]])
+plot(pr)
 
 
 
