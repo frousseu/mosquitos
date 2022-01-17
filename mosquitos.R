@@ -31,6 +31,7 @@ library(DHARMa)
 library(corrplot)
 library(abind)
 library(mgcv)
+library(dplyr)
 
 # first set working directory
 # all files should be in this folder
@@ -277,6 +278,21 @@ proj4string(ds)<-"+init=epsg:4326"
 ds<-spTransform(ds,CRS(prj))
 
 
+### Region ##############################################
+
+reg<-st_read("C:/Users/God/Documents/mosquitos/data/SHP/SHP",layer="regio_s")
+reg$region[grep("Outaouais|Laurentides|Lanaudière|Abitibi|Côte|Centre|Capitale|Nord|Mauricie|Saguenay",reg$RES_NM_REG)]<-"Nord"
+reg$region[grep("Montréal",reg$RES_NM_REG)]<-"Montréal"
+reg$region[grep("Laval",reg$RES_NM_REG)]<-"Laval"
+reg$region[grep("Estrie|Montérégie|Centre|Chaudière|Gaspésie|Bas",reg$RES_NM_REG)]<-"Sud"
+reg <- reg %>% group_by(region) %>% summarise(geometry = st_union(geometry))
+plot(st_geometry(reg))
+reg<-st_transform(reg,st_crs(ds))
+
+ds$region<-st_join(st_as_sf(ds),reg,join=st_intersects)$region
+
+plot(ds,col=factor(ds$region))
+
 ### Show trap data ######################################
 
 #### By year ###########################################
@@ -287,7 +303,8 @@ lapply(l,function(i){
   print(nrow(x))
   plot(x,col="white")
   plot(Q,add=TRUE,col="grey90",border="white")
-  plot(x,add=TRUE,pch=16,cex=1,col=gray(0,0.75))
+  plot(x,add=TRUE,pch=16,cex=1,col="forestgreen")
+  plot(st_geometry(reg),add=TRUE,border=gray(0,0.15),lwd=3)
   mtext(i$year[1],side=3,adj=c(0,0),line=-1.25)
 })
 par(mfrow=c(1,1))
@@ -437,7 +454,7 @@ ds<-ds[!is.na(o),]
 ##  location=c(ymax=45.9022729397129,xmin=-74.4357158151628,ymin=45.1889865783487,xmax=-72.8946830482002), # topleft and bottom right coordinates of ds object
 #  start = 2003,
 #  end = 2016,
-#  param = c("tmean","prcp"),
+#  param = c("tmin"),
 #  path = file.path(path,"daymet"))
 
 # faster to stack rasters, summarize them to weekly values and then merge them, not merge and then summarize
@@ -786,6 +803,19 @@ rev(sort(sapply(ls(),function(i){object.size(get(i))})))/1024^24
 
 rm(e,lf,dsbuffer,can,map,info,coords,lbuffer,buffers,que,inspq,gdg);gc();gc()
 
+##### Show locations and % #######################################
+#x<-ds[!duplicated(ds$idlulc),]
+#x<-x[x$db!="map",]
+#x<-st_as_sf(x)
+#x50<-st_transform(st_buffer(x,0.050),4326)
+#x1000<-st_transform(st_buffer(x,1),4326)
+#x<-st_transform(x,4326)
+#vars<-names(ds)[grep("1000|50",names(ds))]
+#mapviewOptions(basemaps = c("Esri.WorldImagery"))
+#mapview(list(x50[,vars],x[,vars]),layer.name=c("barren50 buffer50m","trap"),zcol="barren50",alpha.regions=0.5)
+#mapview(list(x1000[,vars],x[,vars]),layer.name=c("barren1000 buffer1000m","trap"),zcol="barren1000",alpha.regions=0.5)
+
+
 ### save the loaded data in a session
 #save.image("mosquitos.RData")
 
@@ -799,8 +829,8 @@ corrplot(cor(ds@data[ds@data$db!="map",vars]),method="number",number.cex=0.5)
 par(mar=c(0,0,0,0),oma=c(4,4,1,1))
 plot(ds@data[ds@data$db!="map",vars[grep("jul|tmax|anom|prcp",vars)]],pch=16,cex=0.5,col=gray(0,0.1))
 
-#ws<-vars[grep("jul|tmax|prcp|anom",vars)]
-ws<-vars[grep("jul|anom",vars)]
+ws<-vars[grep("jul|tmax|prcp|anom",vars)]
+#ws<-vars[grep("jul|anom",vars)]
 ws<-ws[-grep("square",ws)]
 par(mar=c(0,0,0,0),oma=c(4,4,1,1))
 plot(ds@data[ds@data$db!="map",ws],pch=16,cex=0.5,col=gray(0,0.075))
@@ -858,7 +888,7 @@ d[,lapply(.SD,sum,na.rm=TRUE),by=year,.SD=species][order(year),][,1:6]
 
 #### Subset data #############################################
 inla.setOption(inla.mode="experimental")
-year<-c(2004)#c(2003:2006,2013:2016);
+year<-c(2003:2016)#c(2003:2006,2013:2016);
 weeks<-10:50
 spcode<-"VEX_"
 lweeks<-lapply(year,function(i){list(i,weeks)})
