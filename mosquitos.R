@@ -111,7 +111,7 @@ tiles<-paste0("_",gsub(".nc","",unique(sapply(strsplit(list.files(file.path(path
 
 # reste 4 and 6+
 
-foreach(k=seq_along(tiles)[-c(1:3)],.packages=c("abind","mgcv","raster")) %do% {
+foreach(k=seq_along(tiles)[1:13],.packages=c("abind","mgcv","raster")) %do% {
   tile<-tiles[k]
   g<-grep(tile,names(lf))
   lr<-lf[g]
@@ -134,7 +134,7 @@ foreach(k=seq_along(tiles)[-c(1:3)],.packages=c("abind","mgcv","raster")) %do% {
   #an<-lapply(seq_along(ts),function(j){
     i<-ts[[j]]
     x<-data.frame(tmean=i)
-    x$date<-as.Date(names(i),format="X%Y.%m.%d")
+    x$date<-as.Date(substr(names(i),1,11),format="X%Y.%m.%d")
     x$jul<-as.integer(format(x$date,"%j"))
     if(all(is.nan(x[,"tmean"]))){
       p<-empty
@@ -149,24 +149,26 @@ foreach(k=seq_along(tiles)[-c(1:3)],.packages=c("abind","mgcv","raster")) %do% {
     x$normal<-rep(p,nrow(x)/365)
     x$anomaly<-x$tmean-x$normal
     cat("\r",paste(k,length(tiles)," - ",j,length(ts),sep=" / "))
-    x
+    #plot(x$anomaly)
+    x$anomaly
+   
     #matrix(c(x$normal,x$anomaly),ncol=2)
   }#)
   t2<-Sys.time()
   t2-t1
+  rm(ts);gc()
   
-  aa<-a
   for(i in 1:nrow(ii)){
-    aa[ii[i,1],ii[i,2],]<-an[[i]]$anomaly
-    #print(i)
+    a[ii[i,1],ii[i,2],]<-an[[i]]
   }
+  rm(an);gc()
   
-  aa<-lapply(split(1:dim(aa)[3], ceiling(1:dim(aa)[3]/365)),function(i){
-    aa[,,i]
+  a<-lapply(split(1:dim(a)[3], ceiling(1:dim(a)[3]/365)),function(i){
+    a[,,i]
   })
   
   temp<-lapply(seq_along(lr),function(i){
-    r<-setValues(lr[[i]],aa[[1]])
+    r<-setValues(lr[[i]],a[[i]])
     names(r)<-names(lr[[i]])
     r
   })
@@ -177,8 +179,9 @@ foreach(k=seq_along(tiles)[-c(1:3)],.packages=c("abind","mgcv","raster")) %do% {
   #  layer(sp.polygons(as(st_transform(st_as_sf(Q),crs=st_crs(lr[[1]])),"Spatial"),col=gray(0,0.25)))
   
   for(kk in seq_along(temp)){
-    writeRaster(temp[[kk]],filename=file.path(path,"daymet",paste0("anom_",names(temp)[kk])),format="CDF")
+    writeRaster(temp[[kk]],filename=file.path(path,"daymet",paste0("anom_",names(temp)[kk])),format="CDF",overwrite=TRUE)
   }
+  rm(temp,a);gc()
   cat("\r",paste(k,length(tiles)))
 }
 
@@ -493,6 +496,8 @@ lapply(nbtraps,function(i){
   axis(2,las=TRUE)
   #grid()
 })
+par(mfrow=c(1,1))
+
 
 #### Keep what's in the zone #######################################
 plot(ds)
@@ -578,6 +583,9 @@ map<-cbind(info,coords)
 coordinates(map)<-~lon+lat
 proj4string(map)<-CRS(proj4string(ds))
 
+map$region<-st_join(st_as_sf(map),reg,join=st_intersects)$region
+#plot(map,col=factor(map$region))
+
 setdiff(names(ds),names(map))
 setdiff(names(map),names(ds))
 
@@ -594,7 +602,8 @@ ds<-ds[!is.na(o),]
 
 ### Weather lags #####################################
 
-weathervars<-c("tmax","tmin","prcp","anom")
+weathervars<-c("tmean","tmax","tmin","prcp","anom")
+#weathervars<-c("anom")
 #weathervars<-c("tmax","anom")
 #weathervars<-c("anom")
 
@@ -634,7 +643,7 @@ for(v in seq_along(weathervars)){
   })
   nameslf<-names(lf)
   
-  if(weathervars[v]=="anom"){
+  if(weathervars[v]%in%c("anom","tmean")){ # gives correct names to these generated vars
     lf<-lapply(seq_along(lf),function(i){
       #r<-aggregate(i,2)
       r<-lf[[i]]
@@ -825,7 +834,7 @@ ds$julsquare<-ds$jul^2
 ds$db<-gsub("pred","map",ds$db)
 
 options(scipen=20)
-rev(sort(sapply(ls(),function(i){object.size(get(i))})))/1024^24
+rev(sort(sapply(ls(),function(i){object.size(get(i))})))/1024^2
 
 rm(e,lf,dsbuffer,can,map,info,coords,lbuffer,buffers,que,inspq,gdg);gc();gc()
 
@@ -848,7 +857,7 @@ rm(e,lf,dsbuffer,can,map,info,coords,lbuffer,buffers,que,inspq,gdg);gc();gc()
 ## Correlations ###############################################
 
 #### Pairwise #################################################
-vars<-names(ds)[grep("jul|tmax|prcp|anom|forest|agriculture|water|urban|pond|swamp|pasture|crop|wet|barren",names(ds))]
+vars<-names(ds)[grep("jul|tmean|tmin|tmax|prcp|anom|forest|agriculture|water|urban|pond|swamp|pasture|crop|wet|barren",names(ds))]
 vars<-vars[-grep("CQ",vars)]
 corrplot(cor(ds@data[ds@data$db!="map",vars]),method="number",number.cex=0.5)
 
@@ -1227,7 +1236,7 @@ for(k in seq_along(v1)){
   p<-t(apply(p,1,function(i){c(quantile(i,0.0275),mean(i),quantile(i,0.975))}))
   if(nrow(lp[[v1[k]]])==n){
     vals<-lp[[v1[k]]][,v1[k]]
-    plot(vals,p[,2],type="l",ylim=c(0,500),xlab=v1[k],font=2,ylab="",lty=1,yaxt="n",mgp=c(2,0.45,0),tcl=-0.3)
+    plot(vals,p[,2],type="l",ylim=c(0,5000),xlab=v1[k],font=2,ylab="",lty=1,yaxt="n",mgp=c(2,0.45,0),tcl=-0.3)
     points(xs@data[,v1[k]],xs$sp,pch=1,col=gray(0,0.1))
     lines(vals,p[,2],lwd=3,col=gray(0,0.8))
     #lines(vals,p[,1],lty=3)
@@ -1336,12 +1345,16 @@ lapply(names(pred)[c(1,2,5,4,3,6)],function(i){
     }
   }
   
-  plot(pred2[[i]],col=col,zlim=zlim,legend.width=2.5, legend.shrink=1,axis.args=axis.args,legend.args=legend.args,axes=FALSE,box=FALSE)
+  plot(pred2[[i]],col=col,zlim=zlim,legend.width=2.5, legend.shrink=1,axis.args=axis.args,legend.args=legend.args,axes=TRUE,box=FALSE,tcl=0.2,mgp=c(1.5,0.0,0),cex.axis=0.7)
   plot(xs[xs$week%in%xsmap$week,],add=TRUE,cex=scales::rescale(xs$sp[xs$week%in%xsmap$week],to=c(0.5,10)),pch=1,lwd=1,col=gray(0,0.65))
   plot(Q,add=TRUE,border=gray(0,0.25))
   #plot(mappingzone,add=TRUE)
   #plot(mesh,add=TRUE)
   mtext(side=3,line=-3,text=i,adj=0.05,font=2,cex=2)
+  obs<-xs$sp[xs$week%in%xsmap$week]
+  vobs<-seq(min(obs),max(obs),length.out=7)
+  vleg<-scales::rescale(c(vobs,obs),to=c(0.5,10))[1:length(vobs)]
+  legend("left",legend=round(vobs,0),pch=1,pt.cex=vleg,x.intersp=2.5,y.intersp=2.5,bty="n")
 })
 
 ## Map predictions with posteriors samples #############################
@@ -1399,8 +1412,8 @@ plot(pr)
 #### Simulated ###############################################
 prob<-m$summary.fitted.values[index[["est"]],"mean"]
 matprob<-apply(s.eff,2,function(i){
-  rbinom(length(i),size=1,prob=1-sample(zeroprob,1))*rnbinom(n=length(i),mu=exp(i),size=sample(nbsize,1))
-  #1*rnbinom(n=length(i),mu=exp(i),size=sample(nbsize,1)) no zeroinflation
+  #rbinom(length(i),size=1,prob=1-sample(zeroprob,1))*rnbinom(n=length(i),mu=exp(i),size=sample(nbsize,1))
+  1*rnbinom(n=length(i),mu=exp(i),size=sample(nbsize,1)) # no zeroinflation
 })
 
 #### DHARMa plots ############################################
