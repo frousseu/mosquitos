@@ -333,7 +333,7 @@ d$species<-gsub("à","a",gsub("é","e",gsub("/| |-","_",gsub("\\.","",d$species)
 ### check number of lines to sum (or duplicate lines based on id, lon, lat, date, species)
 d[,nlines:=.N,by=.(id,lon,lat,date,code,species,db)] # counts the nb of lines per by
 d[nlines>1,][order(-nlines,id,date)] # shows the highest nb off lines
-d[,nlines:=NULL] # removes le tthe nb of lines
+d[,nlines:=NULL] # removes le the nb of lines
 
 ### sum values and keep varying nights
 # some traps have more than one nb of nights of effort
@@ -986,7 +986,7 @@ prec.prior <- list(prior='pc.prec', param=c(1, 0.5))
 
 # show priors on ar1
 co<-seq(-0.99,0.99,by=0.01)
-mu<-0.99#h.spec$rho$param[1]
+mu<-0.9#h.spec$rho$param[1]
 alpha<-0.9999#h.spec$rho$param[2]
 par(mfrow=c(1,3))
 hist(inla.pc.rcor1(10000,u=mu,alpha=alpha))
@@ -1236,7 +1236,7 @@ for(k in seq_along(v1)){
   p<-t(apply(p,1,function(i){c(quantile(i,0.0275),mean(i),quantile(i,0.975))}))
   if(nrow(lp[[v1[k]]])==n){
     vals<-lp[[v1[k]]][,v1[k]]
-    plot(vals,p[,2],type="l",ylim=c(0,5000),xlab=v1[k],font=2,ylab="",lty=1,yaxt="n",mgp=c(2,0.45,0),tcl=-0.3)
+    plot(vals,p[,2],type="l",ylim=c(0,1000),xlab=v1[k],font=2,ylab="",lty=1,yaxt="n",mgp=c(2,0.45,0),tcl=-0.3)
     points(xs@data[,v1[k]],xs$sp,pch=1,col=gray(0,0.1))
     lines(vals,p[,2],lwd=3,col=gray(0,0.8))
     #lines(vals,p[,1],lty=3)
@@ -1412,8 +1412,8 @@ plot(pr)
 #### Simulated ###############################################
 prob<-m$summary.fitted.values[index[["est"]],"mean"]
 matprob<-apply(s.eff,2,function(i){
-  #rbinom(length(i),size=1,prob=1-sample(zeroprob,1))*rnbinom(n=length(i),mu=exp(i),size=sample(nbsize,1))
-  1*rnbinom(n=length(i),mu=exp(i),size=sample(nbsize,1)) # no zeroinflation
+  rbinom(length(i),size=1,prob=1-sample(zeroprob,1))*rnbinom(n=length(i),mu=exp(i),size=sample(nbsize,1))
+  #1*rnbinom(n=length(i),mu=exp(i),size=sample(nbsize,1)) # no zeroinflation
 })
 
 #### DHARMa plots ############################################
