@@ -1220,7 +1220,8 @@ table(sapply(strsplit(row.names(samples[[1]]$latent),":"),"[",1))
 
 params<-dimnames(m$model.matrix)[[2]]
 nparams<-sapply(params,function(i){
-  grep(paste0(i,":"),row.names(samples[[1]]$latent))  
+  #grep(paste0(i,":"),row.names(samples[[1]]$latent))  # old version
+  match(paste0(i,":1"),row.names(samples[[1]]$latent)) 
 }) 
 #table(sapply(strsplit(row.names(samples[[1]]$latent),":"),"[",1))
 nweights<-grep("spatial",row.names(samples[[1]]$latent))[iset$spatial.group==fixgroupn]
@@ -1229,6 +1230,7 @@ par(mfrow=n2mfrow(length(v1),asp=3.5/2),mar=c(3,2,1,1),oma=c(0,10,0,0))
 for(k in seq_along(v1)){
   p<-lapply(1:nsims,function(i){
     betas<-samples[[i]]$latent[nparams]
+    names(betas)<-names(nparams)
     fixed<-cbind(intercept=1,as.matrix(lp[[v1[k]]][,names(nparams[-1])])) %*% betas # make sure betas and vars are in the same order
     # this if we want a spatial part
     wk<-samples[[i]]$latent[nweights]
@@ -1237,8 +1239,8 @@ for(k in seq_along(v1)){
     #}else{
       spatial<-as.matrix(AA) %*% rep(wk,fixgroupn) # stack was Apn in fire
     #}
-    #p<-exp(fixed+spatial)
-    p<-exp(fixed) # ignores spatial part
+    p<-exp(fixed+spatial)
+    #p<-exp(fixed) # ignores spatial part
     p
   })
   p<-do.call("cbind",p)
@@ -1393,7 +1395,8 @@ lapply(names(pred)[c(1,2,5,4,3,6)],function(i){
 
 params<-dimnames(m$model.matrix)[[2]]
 nparams<-sapply(params,function(i){
-  grep(paste0(i,":"),row.names(samples[[1]]$latent))  
+  #grep(paste0(i,":"),row.names(samples[[1]]$latent))  
+  match(paste0(i,":1"),row.names(samples[[1]]$latent)) 
 }) 
 #table(sapply(strsplit(row.names(samples[[1]]$latent),":"),"[",1))
 nweights<-grep("spatial",row.names(samples[[1]]$latent))[iset$spatial.group==unique(gs)]
@@ -1425,7 +1428,7 @@ xsmap$preds<-p[,2]
 
 pr<-rasterize(xsmap,pgrid,field="preds",fun=mean)
 pr<-mask(pr,buf)
-pr<-disaggregate(pr,fact=2,method="bilinear")
+#pr<-disaggregate(pr,fact=2,method="bilinear")
 
 par(mfrow=c(1,2))
 plot(pred[[1]])
@@ -1436,19 +1439,29 @@ plot(pr)
 
 # not done yet and not general enough
 
+
+
 params<-dimnames(m$model.matrix)[[2]]
 nparams<-sapply(params,function(i){
-  grep(paste0(i,":"),row.names(samples[[1]]$latent))  
+  #grep(paste0(i,":"),row.names(samples[[1]]$latent))  
+  match(paste0(i,":1"),row.names(samples[[1]]$latent)) 
 }) 
 #table(sapply(strsplit(row.names(samples[[1]]$latent),":"),"[",1))
-nweights<-grep("spatial",row.names(samples[[1]]$latent))[iset$spatial.group==unique(gs)]
-Amapmatrix<-as.matrix(Amap)
-
+yearpred<-"2015"
+gss<-match(yearpred,sort(unique(xs$temporal)))
+nweights<-grep("spatial",row.names(samples[[1]]$latent))[iset$spatial.group==gss]
+Amapp<-inla.spde.make.A(mesh=mesh,loc=coordinates(xsmap),group=gss) 
+Amapmatrix<-as.matrix(Amapp)
+#Amapmatrix<-as.matrix(Amap) # previously
+#Amapp1<-inla.spde.make.A(mesh=mesh,loc=coordinates(xsmap),group=gss) 
+#Amap1<-inla.spde.make.A(mesh=mesh,loc=coordinates(xsmap),group=1)
+#Amap3<-inla.spde.make.A(mesh=mesh,loc=coordinates(xsmap),group=1)
+#a1<-unique(as.vector(as.matrix(Amap3)[,1:212]))
+#a2<-unique(as.vector(as.matrix(Amap3)[,213:424]))
 
 #par(mfrow=n2mfrow(length(v1),asp=3.5/2),mar=c(3,2,1,1),oma=c(0,10,0,0))
 #for(k in seq_along(v1)){
-yearpred<-"2005"
-days<-seq(min(xs$jul[xs$year==yearpred]),max(xs$jul[xs$year==yearpred]),length.out=20)
+days<-seq(min(xs$jul[xs$year==yearpred]),max(xs$jul[xs$year==yearpred]),length.out=10)
 lpr<-foreach(j=seq_along(days),.packages=c("raster")) %do% {
   dat<-as.matrix(xsmap@data[,names(nparams[-1])])
   dat[,c("jul","julsquare")]<-cbind(days[j],days[j]^2)[rep(1,nrow(dat)),]
@@ -1460,7 +1473,7 @@ lpr<-foreach(j=seq_along(days),.packages=c("raster")) %do% {
     #if(is.factor(xs@data[,v[k]])){ # factors never in model (et)
     #spatial<-as.matrix(inla.spde.make.A(mesh=mesh,loc=matrix(c(0.3,0.5),ncol=2)[rep(1,nlevels(size[,v[k]])),,drop=FALSE])) %*% wk
     #}else{
-    spatial<-Amapmatrix %*% rep(wk,unique(gs)) # stack was Apn in fire
+    spatial<-Amapmatrix %*% rep(wk,unique(gss)) # stack was Apn in fire
     #}
     p<-exp(fixed+spatial)
     #p<-exp(fixed) # ignores spatial part
@@ -1488,32 +1501,57 @@ jul<-round(days*sdjul+meanjul,0)
 datelim<-range(as.Date(format(as.Date(jul,origin=paste0(yearpred,"-01-01")),"%Y-%m-%d")))+c(-5,5)
 
 zlim<-range(sapply(lpr,function(i){range(values(i),na.rm=TRUE)}))
-img <- image_graph(1200, 1000, res = 150)
+img <- image_graph(1500, 1000, res = 150)
 lapply(seq_along(lpr),function(i){
   j<-round(days[i]*sdjul+meanjul,0)
   xdate<-as.Date(format(as.Date(j,origin=paste0(yearpred,"-01-01")),"%Y-%m-%d"))
   gw<-layout(matrix(c(1,rep(2,20)),ncol=1))
-  par(mar=c(1,0,0,10))
+  par(mar=c(1,0,0,3),oma=c(0,0,0,5))
   plot(xdate,1,pch=25,xlim=datelim,yaxt="n",cex=2,bty="n",yaxt="n",col=1,bg=1)
   par(mar=c(0,0,0,0))
   at<-seq(min(values(log(lpr[[i]])),na.rm=TRUE),max(values(log(lpr[[i]])),na.rm=TRUE),length.out=5)
-  labels<-round(exp(at),0)
+  labels<-paste(round(exp(at),0),c("min pred. > 0",rep("",length(at)-2),"max pred."))
   plot(log(lpr[[i]]),range=log(zlim),col=cols,asp=1,axes=FALSE,bty="n",plg=list(at=at,labels=labels,cex=1.5))
   plot(st_geometry(water),border=NA,col="white",add=TRUE)
+  
   xxs<-st_transform(st_as_sf(xs[xs$date%in%as.character(seq.Date(xdate-3,xdate+3,by=1)),]),crs=crs(lpr[[1]]))
-  plot(st_geometry(xxs),pch=1,cex=scales::rescale(log(c(0,max(xs$sp[xs$year==yearpred],na.rm=TRUE),xxs$sp)+0.01),to=c(0.25,10))[-(1:2)],add=TRUE)
+  colobs<-c(log(zlim),log(xxs$sp))
+  colobs<-ifelse(is.infinite(colobs),NA,colobs)
+  colobs<-colo.scale(colobs,cols)[-(1:2)]
+  colobs<-ifelse(is.na(colobs),"#FFFFFF",colobs)
+  #plot(st_geometry(xxs),pch=1,cex=scales::rescale(identity(c(0,max(xs$sp[xs$year==yearpred],na.rm=TRUE),xxs$sp)+0.01),to=c(0.25,10))[-(1:2)],add=TRUE)
+  plot(st_geometry(xxs),pch=21,cex=2,add=TRUE,bg=colobs,col="grey10",lwd=0.4)
+  text(st_coordinates(st_geometry(xxs)),label=xxs$sp,cex=0.7,col="grey10",adj=c(0.5,-1))
   #plot(log(lpr[[i]]),zlim=log(zlim),col=cols,asp=1,legend.only=TRUE)
   mtext(side=3,line=-2,text=paste0(spcode,yearpred),adj=0.15)
+  mtext(side=4,line=-1,text="Number of mosquitos per trap (observed and predicted)",adj=0.5)
+  
+  ### hist of fit optional
+  #print(i)
+  #xxsb<-st_buffer(xxs,2)
+  #e<-extract(lpr[[i]],vect(xxsb))
+  #par(mar=c(2,0,0,0))
+  #by<-50
+  #maxn<-max(c(e[,2],xxs$sp))*1.05
+  ##brks<-unique(c(seq(0,100,by=by),seq(100,200,by=by),seq(200,max(maxn,400)*1.05,by=by)))
+  #brks<-seq(0,maxn+by,length.out=20)
+  #h1<-hist(e[,2],breaks=brks,plot=FALSE)
+  #h2<-hist(xxs$sp,breaks=brks,plot=FALSE)
+  #ylim<-range(c(h1$density,h2$density))
+  #h1<-hist(e[,2],breaks=brks,xlim=c(0,maxn),freq=FALSE,border=NA,ylim=ylim)
+  #par(new=TRUE,lwd=3)
+  #h2<-hist(xxs$sp,breaks=brks,xlim=c(0,maxn),freq=FALSE,col=NA,border=alpha("darkred",0.5),lwd=3,ylim=ylim)
+  
 })
 dev.off()
-animation <- image_animate(img, fps = 2, optimize = TRUE)
+animation <- image_animate(img, fps = 1, optimize = TRUE)
 #print(animation)
 
-image_write(animation, "C:/Users/God/Downloads/gapminder.gif")
+image_write(animation, "C:/Users/God/Downloads/animate.gif")
 
 
 
-### Model checks ##############################################
+ ### Model checks ##############################################
 
 # make sure this is the right way to do it and check if parameters are ok. I'm sampling from the sampled hyperpar for each sims, but this is hacky and not correctly jointly sampled
 
