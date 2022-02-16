@@ -37,6 +37,10 @@ library(rasterVis)
 library(terra)
 library(doSNOW)
 library(magick)
+library(splines)
+library(glmmTMB)
+library(ggeffects)
+library(patchwork)
 
 #options(device = "X11")
 
@@ -934,7 +938,7 @@ d[,lapply(.SD,sum,na.rm=TRUE),by=year,.SD=species][order(year),][,1:6]
 
 #### Subset data #############################################
 inla.setOption(inla.mode="experimental")
-year<-c(2003:2016)#c(2003:2006,2013:2016);
+year<-c(2003:2016);
 weeks<-10:50
 spcode<-"VEX_"
 lweeks<-lapply(year,function(i){list(i,weeks)})
@@ -951,11 +955,67 @@ xs$nbtraps<-a$nbtraps[match(xs$week,a$week)]
 xs<-xs[xs$nbtraps>=0,]
 cat(paste(sort(unique(xs$week)),collapse=", "))
 
+
+xs$jul<-as.integer(format(as.Date(xs$date),"%j"))
+
+meanjul<-mean(xs$jul[xs$db!="map"])
+sdjul<-sd(xs$jul[xs$db!="map"])
+
+xs$jul<-(xs$jul-meanjul)/sdjul
+xs$julsquare<-xs$jul^2
+
+
+l<-split(xs,xs$week)
+par(mfrow=n2mfrow(length(l)),mar=c(0,0,0,0))
+lapply(l,function(i){
+  plot(mappingzone)
+  plot(i,cex=i$sp/200,pch=1,add=TRUE)
+  mtext(side=3,line=-1,text=i$week[1])
+})
+par(mfrow=c(1,1),mar=c(0,0,0,0))
+
+
+w<-which(xs$sp>5000000)
+if(any(w)){
+  xs<-xs[-w,]
+}
+
+#xs<-xs[substr(xs$week,7,8)%in%c(10:23,25:38),]
+
+#xs$week[xs$db!="map"]<-sample(xs$week[xs$db!="map"])
+
+
 #### Mesh #####################################################
+
+if(TRUE){
+  xs2<-st_as_sf(xs)
+  xs2map<-xs2[xs2$db=="map",]
+  xs2<-xs2[xs2$db!="map",]
+  
+  predmap<-st_buffer(concaveman(xs2,2),0)
+  plot(st_geometry(predmap))
+  plot(st_geometry(xs2),add=TRUE)
+  xs2map<-xs2map[predmap,]
+  plot(st_geometry(xs2map),add=TRUE)
+  
+  xs3pts<-as(st_sample(predmap,3000),"Spatial")
+  xs2pts<-as(st_cast(predmap,"MULTIPOINT"),"Spatial")
+  xs2<-as(xs2,"Spatial")
+  xs2map<-as(xs2map,"Spatial")
+  
+  plot(st_geometry(predmap),add=TRUE,border="red")
+  
+}
+
+
 edge<-7
-domain <- inla.nonconvex.hull(coordinates(ds),convex=-0.015, resolution = c(100, 100))
-mesh<-inla.mesh.2d(loc.domain=coordinates(ds),max.edge=c(edge,3*edge),offset=c(edge,2*edge),cutoff=edge,boundary=domain,crs=CRS(proj4string(xs)))
-#par(mfrow=c(1,2))
+#domain <- inla.nonconvex.hull(coordinates(ds),convex=-0.015, resolution = c(100, 100))
+#mesh<-inla.mesh.2d(loc.domain=coordinates(ds),max.edge=c(edge,3*edge),offset=c(edge,1*edge),cutoff=edge,boundary=domain,crs=CRS(proj4string(xs)))
+#domain <- inla.nonconvex.hull(coordinates(xs2pts),convex = -0.15, concave = 0.5, resolution = c(340,340))
+domain <- inla.nonconvex.hull(rbind(coordinates(xs2pts),coordinates(xs3pts)))
+#ims<-inla.mesh.segment(loc=coordinates(xs2pts))
+mesh<-inla.mesh.2d(loc.domain=NULL,max.edge=c(edge,4*edge),offset=NULL,cutoff=edge,boundary=domain,crs=CRS(proj4string(xs)))
+#mesh<-inla.mesh.2d(boundary=domain,max.edge=c(edge,2*edge),offset=NULL,cutoff=0.5*edge,crs=CRS(proj4string(xs)))
 plot(mesh,asp=1)
 plot(Q,col="grey90",border="white",add=TRUE,lwd=2)
 plot(mesh,asp=1,add=TRUE)
@@ -964,31 +1024,39 @@ plot(xs[!xs$db%in%"map",],add=TRUE,pch=16,col="forestgreen")
 plot(mappingzone,add=TRUE)
 mtext(side=3,line=-2,text=paste("edge =",edge,"km"),font=2,cex=1.5)
 
+#### Choose temporal timestep ##################################
+#xs$week<-as.integer(substr(xs$week,1,4))
+xs$temporal<-as.integer(substr(xs$week,1,4))
+
 
 #### Restrict predictions ######################################
 xsmap<-xs[xs$db=="map",]
 xs<-xs[xs$db!="map",]
 keep<-expand.grid(year=year[length(year)],week=32)
 keep<-sort(sapply(1:nrow(keep),function(i){paste(keep$year[i],keep$week[i],sep="_W")}))
-xsmap<-xsmap[xsmap$week%in%keep,]
+#xsmap<-xsmap[xsmap$week%in%keep,]
+fixpred<-"2004_W32"
+fixgroup<-"2004"
+xsmap<-xsmap[xsmap$week%in%fixpred,]
 
 
 #### SPDE #################################################
 spde <- inla.spde2.pcmatern(
   mesh=mesh, alpha=2, ### mesh and smoothness parameter
   constr = FALSE, # not exactly sure what this does
-  prior.range=c(5, 0.01), ### P(practic.range<0.05)=0.01
-  prior.sigma=c(1, 0.01)) ### P(sigma>1)=0.01
+  prior.range=c(5, 0.1), ### P(practic.range<0.05)=0.01
+  prior.sigma=c(0.5, 0.01)) ### P(sigma>1)=0.01
 
 #### Priors on hyperpar ##################################
 #h.spec <- list(theta=list(prior="pc.prec", param=c(0.5,0.5)), rho=list(prior="pc.cor1", param=c(0.9,0.9)))
 #h.spec <- list(theta = list(prior="pc.prec", param=c(1, NA)),
 #               rho = list(prior="pc.cor0", param=c(0.1, NA)))
-
+u<-0.7
+alpha<-0.5 #sqrt((1-u)/2)+0.001
+c(u,alpha)
 h.spec <- list(#theta=list(prior='pc.prec', param=c(0.5, 0.5)))#,
-  #rho = list(prior="pc.cor0", param=c(0.7,0.3)))
-  rho = list(prior="pc.cor1", param=c(0.9,0.25))) #0.9 0.25
-prec.prior <- list(prior='pc.prec', param=c(1, 0.5))
+  rho = list(prior="pc.cor1", param=c(u,alpha))) #0.9 0.25
+prec.prior <- list(prior='pc.prec', param=c(1, 0.05))
 #h.spec <- list(theta = list(prior = "betacorrelation",param=c(1,3),initial=-1.098))
 #hist(rbeta(10000,1,3))
 
@@ -1019,20 +1087,64 @@ hist(rnbinom(10000,mu=mu,size=exp(vals)),main=paste("Simulated counts with mu ="
 par(mfrow=c(1,1))
 inla.pc.dgamma(x, lambda = 1, log = FALSE)
 
+#co<-seq(-0.999,0.999,by=0.001)
+#u<-seq(0.00001,0.2,length.out=10)
+#alpha<-sqrt((1-u)/2)+0.1
+#alpha<-rep(0.75,length(u))
 
-#### Formula ########################################
+#u<-c(0.0000001,0.01,0.1,0.5,0.9,0.95,0.99,0.99)
+#sqrt((1-u)/2)
+#alpha<-c(0.75,0.75,0.75,0.75,0.75,0.75,0.75,0.999)
+#l<-lapply(seq_along(u),function(i){
+#  print(i)
+#  scales::rescale(inla.pc.dcor1(co,u=u[i],alpha=alpha[i]),to=c(0,1))
+#})
+#plot(0:1,0:1,type="n",xlim=c(-1,1),ylim=range(unlist(l)))
+#lapply(l,function(i){
+#  lines(co,i)  
+#})
+#abline(h=0,lty=3)
+
+
+#u<-c(0.001,0.01,0.1,0.5,0.7,0.9,0.95,0.99)
+#alpha<-c(0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1)
+#l<-lapply(seq_along(u),function(i){
+#  print(i)
+#  scales::rescale(inla.pc.dcor0(co,u=u[i],alpha=alpha[i]),to=c(0,1))
+#})
+#plot(0:1,0:1,type="n",xlim=c(-1,1),ylim=range(unlist(l)))
+#lapply(l,function(i){
+#  lines(co,i)  
+#})
+#abline(h=0,lty=3)
+
+#jul<-c(1,25,75,runif(100,1,100),100)
+#sp<-rnorm(length(jul))
+#x<-data.frame(sp=sp,jul=jul)
+#knots<-seq(min(xs$jul),max(xs$jul),length.out=4)
+#unname(head(model.matrix(sp~ns(jul,df=NULL,knots=knots,Boundary.knots=range(x$jul)),data=x)))
+
+#### Model formula ########################################
 #model <- y ~ -1 + intercept + jul + julsquare + forest50 + urban50 + urban1000 + agriculture1000  + tmax7 + tmax2 + prcp30 + f(spatial, model=spde, group=spatial.group,control.group=list(model='ar1', hyper=h.spec))
-model <- y ~ -1 + intercept + jul + julsquare + f(spatial, model=spde, group=spatial.group,control.group=list(model='ar1', hyper=h.spec)) 
+
+# using knots allow to fix the values for each jul across newdata
+knots<-seq(min(xs$jul)+0.5,max(xs$jul)-0.5,length.out=7)
+model <- y ~ -1 + intercept + ns(jul,knots=knots) + urban50 + urban1000+ forest50 + forest1000 + anom2 + prcp2 + anom30 + prcp30 + f(spatial, model=spde, group=spatial.group,control.group=list(model='ar1', hyper=h.spec))
+
+#model <- y ~ -1 + intercept + bs(jul) + f(spatial, model=spde, group=spatial.group,control.group=list(model='ar1', hyper=h.spec))
+#model <- y ~ -1 + intercept + jul + julsquare + forest1000 + f(spatial, model=spde, group=spatial.group,control.group=list(model='ar1', hyper=h.spec))
+#model <- y ~ -1 + intercept + jul + julsquare + f(spatial, model=spde, group=spatial.group,control.group=list(model='ar1', hyper=h.spec)) 
 #model <- y ~ -1 + intercept + jul + julsquare + forest100 + urban100 + f(spatial, model=spde, group=spatial.group,control.group=list(model='ar1', hyper=h.spec)) 
 #model <- y ~ -1 + intercept + jul + julsquare + forest + urban + tmax15 + tmax1
 #model <- y ~ -1 + intercept + f(spatial, model=spde, group=spatial.group,control.group=list(model='ar1', hyper=h.spec)) 
 #formulae <- y ~ 0 + w + f(spatial, model=spde) + f(week,model="rw1")
 #formulae <- y ~ 0 + w + f(spatial, model=spde, group=spatial.group,control.group=list(model='exchangeable')) 
-v<-setdiff(all.vars(model),c("y","spatial","intercept","spde","spatial.group","h.spec")) 
+
+v<-setdiff(all.vars(model),c("y","spatial","intercept","spde","spatial.group","h.spec","year","knots")) 
 
 #### Priors on fixed effects ##############################
-vals<-list(intercept=1/5^2,default=1/30^2) #5-30
-control.fixed<-list(prec=vals,mean=list(intercept=-20,default=0),expand.factor.strategy = "inla")
+vals<-list(intercept=1/35^2,default=1/30^2) #5-30
+control.fixed<-list(prec=vals,mean=list(intercept=0,default=0),expand.factor.strategy = "inla")
 
 #### Newdata ########################################
 n<-50
@@ -1047,20 +1159,36 @@ if(length(v2)){
     res[,order(names(res))]
   })
 }
+if(TRUE){ # adds basis columns to new data
+  lp<-lapply(names(lp),function(j){
+    i<-lp[[j]]
+    if(j=="jul"){
+      mm<-model.matrix(jul~0+ns(jul,knots=knots),data=i)
+    }else{
+      mm<-model.matrix(jul~0+ns(jul,knots=knots),data=lp[["jul"]])
+      mm<-mm[which.min(abs(lp[["jul"]]$jul-mean(xs$jul))),,drop=FALSE][rep(1,nrow(i)),] # finds the smallest difference with the jul date sequence to get basis jul values
+    }
+    res<-cbind(i,mm)
+    names(res)<-gsub("ns\\(jul\\, knots = knots\\)","X",names(res))
+    res
+  })
+}
+names(lp)<-v1
+#head(lp[[1]])
 #model<-formula(paste("y~-1+",paste(v,collapse="+")))
 #lp<-lapply(lp,function(i){mmatrix(model,i)})
 #lpmed<-mmatrix(model,newdata(x=xs[,v,drop=FALSE],v=v,n=1,fun=median,list=FALSE)[[1]][rep(1,length(g)),])[[1]]
 
 
 #### Make index ##########################################
-k<-length(unique(xs$week))
+k<-length(unique(xs$temporal))
 iset<-inla.spde.make.index("spatial",n.spde=spde$n.spde,n.group=k)
 
 
 #### A matrix ##############################################
-gs<-sort(unique(xs$week))
-gs<-match(xsmap$week,gs)
-Aest<-inla.spde.make.A(mesh=mesh,loc=coordinates(xs),group=as.integer(factor(xs$week))) 
+gs<-sort(unique(xs$temporal))
+gs<-match(xsmap$temporal,gs)
+Aest<-inla.spde.make.A(mesh=mesh,loc=coordinates(xs),group=as.integer(factor(xs$temporal))) 
 Amap<-inla.spde.make.A(mesh=mesh,loc=coordinates(xsmap),group=gs) 
 #Apre<-inla.spde.make.A(mesh=mesh,loc=matrix(c(600,5050),ncol=2)[rep(1,n),,drop=FALSE],group=rep(12,n))
 #Apre<-inla.spde.make.A(mesh=mesh,loc=coordinates(xsmap),group=as.integer(factor(xsmap$week)))
@@ -1075,17 +1203,18 @@ stackfull<-inla.stack(stackest,stackmap)
 
 
 #### Stack vars ############################################
-fixgroup<-ceiling(length(sort(unique(xs$week)))/2) # which group to use for var pred
+#fixgroupn<-ceiling(length(sort(unique(xs$temporal)))/2) # which group to use for var pred
+fixgroupn<-match(fixgroup,sort(unique(xs$temporal))) # which group to use for var pred
 for(i in seq_along(v1)){
   le<-nrow(lp[[v1[i]]])
   if(le!=n){
     #AA<-inla.spde.make.A(mesh=mesh,loc=matrix(c(0.3,0.5),ncol=2)[rep(1,le),,drop=FALSE]) # for categorical variables
-    AA<-inla.spde.make.A(mesh=mesh,loc=matrix(c(600,5050),ncol=2)[rep(1,n),,drop=FALSE],group=rep(fixgroup,n))
+    AA<-inla.spde.make.A(mesh=mesh,loc=matrix(c(580,5045),ncol=2)[rep(1,n),,drop=FALSE],group=rep(fixgroupn,n))
   }else{
     #AA<-Apn # for numerical variables
-    AA<-inla.spde.make.A(mesh=mesh,loc=matrix(c(600,5050),ncol=2)[rep(1,n),,drop=FALSE],group=rep(fixgroup,n))
+    AA<-inla.spde.make.A(mesh=mesh,loc=matrix(c(580,5045),ncol=2)[rep(1,n),,drop=FALSE],group=rep(fixgroupn,n))
   }
-  stack<-inla.stack(tag=v1[i],data=list(y=NA),A=list(AA,1),effects=list(c(lapply(iset,"[",iset$spatial.group==fixgroup),list(intercept=1)),lp[[v1[i]]]))     
+  stack<-inla.stack(tag=v1[i],data=list(y=NA),A=list(AA,1),effects=list(c(lapply(iset,"[",iset$spatial.group==fixgroupn),list(intercept=1)),lp[[v1[i]]]))     
   stackfull<-inla.stack(stackfull,stack)
 }
 
@@ -1109,18 +1238,18 @@ m <- inla(model,data=inla.stack.data(stackfull),
           #control.family=list(hyper=list(theta=prec.prior)), 
           control.fixed=control.fixed,
           control.inla = list(strategy='gaussian',int.strategy = "eb"),
-          num.threads="4:4",
+          num.threads="2:2",
           verbose=TRUE,
           control.compute=list(dic=TRUE,waic=FALSE,cpo=FALSE,config=TRUE),
           #control.mode = list(result = m, restart = TRUE)), # to rerun the model with NA predictions according to https://06373067248184934733.googlegroups.com/attach/2662ebf61b581/sub.R?part=0.1&view=1&vt=ANaJVrHTFUnDqSbj6WTkDo-b_TftcP-dVVwK9SxPo9jmPvDiK58BmG7DpDdb0Ek6xypsqmCSTLDV1rczoY6Acg_Zb0VRPn1w2vRj3vzHYaHT8JMCEihVLbY
-          family="zeroinflatednbinomial1")#"zeroinflatednbinomial1"
+          family="nbinomial")#"zeroinflatednbinomial1"
 
 
 #### Posterior samples ####################################
 
 # from haakon bakk a, BTopic112
 nsims<-500
-samples<-inla.posterior.sample(nsims,m,num.threads="4:4")
+samples<-inla.posterior.sample(nsims,m,num.threads="2:2")
 m$misc$configs$contents
 contents<-m$misc$configs$contents
 effect<-"APredictor" # not sure if should use APredictor or Predictor
@@ -1668,13 +1797,21 @@ plot(swediv,add=TRUE,border=gray(0,0.5))
 
 ### Graphical predictions with spatial uncertainty ############################
 
-
-
 mm<-glmmTMB(sp~jul+julsquare+forest+urban+tmax1+tmax15,data=xs@data[!is.na(xs$sp),],family=nbinom2())
 
 plot(mesh,asp=1)
 plot(mappingzone,add=TRUE)
 plot(ds,add=TRUE)
 plot(xsmap,add=TRUE)
+
+
+mm<-glmmTMB(sp ~ ns(jul,knots=knots) + urban50 + urban1000+ forest50 + forest1000 + anom2 + prcp2 + anom30 + prcp30, ziformula=~0, data=xs@data[xs$db!="map",],family=nbinom2())
+
+vs<-all.vars(formula(mm))[-1]
+gl<-lapply(vs,function(i){
+  g<-ggeffect(mm,terms=paste(i,"[n=100]"))
+  plot(g,add=FALSE,jitter=FALSE)+coord_cartesian(ylim = c(0, 600)) 
+})
+wrap_plots(gl,nrow=2)
 
 
