@@ -1230,8 +1230,8 @@ par(mfrow=n2mfrow(length(v1),asp=3.5/2),mar=c(3,2,1,1),oma=c(0,10,0,0))
 for(k in seq_along(v1)){
   p<-lapply(1:nsims,function(i){
     betas<-samples[[i]]$latent[nparams]
-    names(betas)<-names(nparams)
-    fixed<-cbind(intercept=1,as.matrix(lp[[v1[k]]][,names(nparams[-1])])) %*% betas # make sure betas and vars are in the same order
+    names(betas)<-ifelse(names(nparams)%in%1:50,paste0("X",names(nparams)),names(nparams))
+    fixed<-cbind(intercept=1,as.matrix(lp[[v1[k]]][,names(betas[-1])])) %*% betas # make sure betas and vars are in the same order
     # this if we want a spatial part
     wk<-samples[[i]]$latent[nweights]
     #if(is.factor(xs@data[,v[k]])){ # factors never in model (et)
@@ -1240,14 +1240,14 @@ for(k in seq_along(v1)){
       spatial<-as.matrix(AA) %*% rep(wk,fixgroupn) # stack was Apn in fire
     #}
     p<-exp(fixed+spatial)
-    #p<-exp(fixed) # ignores spatial part
+    p<-exp(fixed) # ignores spatial part
     p
   })
   p<-do.call("cbind",p)
   p<-t(apply(p,1,function(i){c(quantile(i,0.0275),mean(i),quantile(i,0.975))}))
   if(nrow(lp[[v1[k]]])==n){
     vals<-lp[[v1[k]]][,v1[k]]
-    plot(vals,p[,2],type="l",ylim=c(0,100),xlab=v1[k],font=2,ylab="",lty=1,yaxt="n",mgp=c(2,0.45,0),tcl=-0.3)
+    plot(vals,p[,2],type="l",ylim=c(0,200),xlab=v1[k],font=2,ylab="",lty=1,yaxt="n",mgp=c(2,0.45,0),tcl=-0.3)
     points(xs@data[,v1[k]],xs$sp,pch=1,col=gray(0,0.1))
     lines(vals,p[,2],lwd=3,col=gray(0,0.8))
     #lines(vals,p[,1],lty=3)
@@ -1392,6 +1392,7 @@ lapply(names(pred)[c(1,2,5,4,3,6)],function(i){
 ### Map predictions with posteriors samples #############################
 
 # not done yet and not general enough
+# this is mostly to make sure that the posterior sample approach gives the same results as the NA approach in the map stack
 
 params<-dimnames(m$model.matrix)[[2]]
 nparams<-sapply(params,function(i){
@@ -1405,8 +1406,12 @@ Amapmatrix<-as.matrix(Amap)
 #par(mfrow=n2mfrow(length(v1),asp=3.5/2),mar=c(3,2,1,1),oma=c(0,10,0,0))
 #for(k in seq_along(v1)){
 p<-lapply(1:nsims,function(i){
+  dat<-xsmap@data
+  juls<-lp[["jul"]][which.min(abs(lp[["jul"]]$jul-dat$jul[1])),,drop=FALSE]
+  dat<-cbind(dat,juls[,names(juls)%in%paste0("X",1:50)][rep(1,nrow(dat)),])
   betas<-samples[[i]]$latent[nparams]
-  fixed<-cbind(intercept=1,as.matrix(xsmap@data[,names(nparams[-1])])) %*% betas # make sure betas and vars are in the same order
+  names(betas)<-ifelse(names(nparams)%in%1:50,paste0("X",names(nparams)),names(nparams))
+  fixed<-cbind(intercept=1,as.matrix(dat[,names(betas[-1])])) %*% betas # make sure betas and vars are in the same order
   # this if we want a spatial part
   wk<-samples[[i]]$latent[nweights]
   #if(is.factor(xs@data[,v[k]])){ # factors never in model (et)
@@ -1439,8 +1444,6 @@ plot(pr)
 
 # not done yet and not general enough
 
-
-
 params<-dimnames(m$model.matrix)[[2]]
 nparams<-sapply(params,function(i){
   #grep(paste0(i,":"),row.names(samples[[1]]$latent))  
@@ -1461,13 +1464,17 @@ Amapmatrix<-as.matrix(Amapp)
 
 #par(mfrow=n2mfrow(length(v1),asp=3.5/2),mar=c(3,2,1,1),oma=c(0,10,0,0))
 #for(k in seq_along(v1)){
-days<-seq(min(xs$jul[xs$year==yearpred]),max(xs$jul[xs$year==yearpred]),length.out=10)
+days<-seq(min(xs$jul[xs$year==yearpred]),max(xs$jul[xs$year==yearpred]),length.out=20)
 lpr<-foreach(j=seq_along(days),.packages=c("raster")) %do% {
-  dat<-as.matrix(xsmap@data[,names(nparams[-1])])
-  dat[,c("jul","julsquare")]<-cbind(days[j],days[j]^2)[rep(1,nrow(dat)),]
+  juls<-lp[["jul"]][which.min(abs(lp[["jul"]]$jul-days[j])),,drop=FALSE]
+  standardv<-names(nparams)[!names(nparams)%in%c("intercept","jul","julsquare",1:50)]
+  dat<-as.matrix(xsmap@data[,standardv])
+  dat<-cbind(dat,data.frame(jul=days[j],julsquare=days[j]^2)[rep(1,nrow(dat)),])
+  dat<-cbind(dat,juls[,names(juls)%in%paste0("X",1:50)][rep(1,nrow(dat)),])
   p<-lapply(1:nsims,function(i){
     betas<-samples[[i]]$latent[nparams]
-    fixed<-cbind(intercept=1,dat) %*% betas # make sure betas and vars are in the same order
+    names(betas)<-ifelse(names(nparams)%in%1:50,paste0("X",names(nparams)),names(nparams))
+    fixed<-cbind(intercept=1,as.matrix(dat[,names(betas)[-1]])) %*% betas # make sure betas and vars are in the same order
     # this if we want a spatial part
     wk<-samples[[i]]$latent[nweights]
     #if(is.factor(xs@data[,v[k]])){ # factors never in model (et)
