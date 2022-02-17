@@ -1360,7 +1360,7 @@ for(k in seq_along(v1)){
   p<-lapply(1:nsims,function(i){
     betas<-samples[[i]]$latent[nparams]
     names(betas)<-ifelse(names(nparams)%in%1:50,paste0("X",names(nparams)),names(nparams))
-    fixed<-cbind(intercept=1,as.matrix(lp[[v1[k]]][,names(betas[-1])])) %*% betas # make sure betas and vars are in the same order
+    fixed<-as.matrix(lp[[v1[k]]][,names(betas)]) %*% betas # make sure betas and vars are in the same order
     # this if we want a spatial part
     wk<-samples[[i]]$latent[nweights]
     #if(is.factor(xs@data[,v[k]])){ # factors never in model (et)
@@ -1368,7 +1368,7 @@ for(k in seq_along(v1)){
     #}else{
       spatial<-as.matrix(AA) %*% rep(wk,fixgroupn) # stack was Apn in fire
     #}
-    p<-exp(fixed+spatial)
+    #p<-exp(fixed+spatial)
     p<-exp(fixed) # ignores spatial part
     p
   })
@@ -1540,7 +1540,7 @@ p<-lapply(1:nsims,function(i){
   dat<-cbind(dat,juls[,names(juls)%in%paste0("X",1:50)][rep(1,nrow(dat)),])
   betas<-samples[[i]]$latent[nparams]
   names(betas)<-ifelse(names(nparams)%in%1:50,paste0("X",names(nparams)),names(nparams))
-  fixed<-cbind(intercept=1,as.matrix(dat[,names(betas[-1])])) %*% betas # make sure betas and vars are in the same order
+  fixed<-as.matrix(dat[,names(betas)]) %*% betas # make sure betas and vars are in the same order
   # this if we want a spatial part
   wk<-samples[[i]]$latent[nweights]
   #if(is.factor(xs@data[,v[k]])){ # factors never in model (et)
@@ -1600,10 +1600,11 @@ lpr<-foreach(j=seq_along(days),.packages=c("raster")) %do% {
   dat<-as.matrix(xsmap@data[,standardv])
   dat<-cbind(dat,data.frame(jul=days[j],julsquare=days[j]^2)[rep(1,nrow(dat)),])
   dat<-cbind(dat,juls[,names(juls)%in%paste0("X",1:50)][rep(1,nrow(dat)),])
+  dat<-cbind(intercept=1,dat)
   p<-lapply(1:nsims,function(i){
     betas<-samples[[i]]$latent[nparams]
     names(betas)<-ifelse(names(nparams)%in%1:50,paste0("X",names(nparams)),names(nparams))
-    fixed<-cbind(intercept=1,as.matrix(dat[,names(betas)[-1]])) %*% betas # make sure betas and vars are in the same order
+    fixed<-as.matrix(dat[,names(betas)]) %*% betas # make sure betas and vars are in the same order
     # this if we want a spatial part
     wk<-samples[[i]]$latent[nweights]
     #if(is.factor(xs@data[,v[k]])){ # factors never in model (et)
@@ -1687,7 +1688,7 @@ image_write(animation, "C:/Users/God/Downloads/animate.gif")
 
 
 
- ### Model checks ##############################################
+### Model checks ##############################################
 
 # make sure this is the right way to do it and check if parameters are ok. I'm sampling from the sampled hyperpar for each sims, but this is hacky and not correctly jointly sampled
 
