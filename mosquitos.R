@@ -44,6 +44,8 @@ library(patchwork)
 
 #options(device = "X11")
 
+Sys.setlocale("LC_ALL","English")
+
 # first set working directory
 # all files should be in this folder
 path<-"C:/Users/God/Documents/mosquitos/data"
@@ -1579,7 +1581,7 @@ nparams<-sapply(params,function(i){
   match(paste0(i,":1"),row.names(samples[[1]]$latent)) 
 }) 
 #table(sapply(strsplit(row.names(samples[[1]]$latent),":"),"[",1))
-yearpred<-"2015"
+yearpred<-"2013"
 gss<-match(yearpred,sort(unique(xs$temporal)))
 nweights<-grep("spatial",row.names(samples[[1]]$latent))[iset$spatial.group==gss]
 Amapp<-inla.spde.make.A(mesh=mesh,loc=coordinates(xsmap),group=gss) 
@@ -1593,6 +1595,7 @@ Amapmatrix<-as.matrix(Amapp)
 
 #par(mfrow=n2mfrow(length(v1),asp=3.5/2),mar=c(3,2,1,1),oma=c(0,10,0,0))
 #for(k in seq_along(v1)){
+
 days<-seq(min(xs$jul[xs$year==yearpred]),max(xs$jul[xs$year==yearpred]),length.out=20)
 lpr<-foreach(j=seq_along(days),.packages=c("raster")) %do% {
   juls<-lp[["jul"]][which.min(abs(lp[["jul"]]$jul-days[j])),,drop=FALSE]
@@ -1623,7 +1626,7 @@ lpr<-foreach(j=seq_along(days),.packages=c("raster")) %do% {
   xsmap$preds<-p[,2]
   pr<-rasterize(xsmap,pgrid,field="preds",fun=mean)
   pr<-mask(pr,buf)
-  pr<-disaggregate(pr,fact=1,method="bilinear")
+  #pr<-disaggregate(pr,fact=1,method="bilinear")
   pr
 }
 
@@ -1637,7 +1640,10 @@ lpr<-lapply(lpr,rast)
 jul<-round(days*sdjul+meanjul,0)
 datelim<-range(as.Date(format(as.Date(jul,origin=paste0(yearpred,"-01-01")),"%Y-%m-%d")))+c(-5,5)
 
-zlim<-range(sapply(lpr,function(i){range(values(i),na.rm=TRUE)}))
+zlim1<-range(sapply(lpr,function(i){range(values(i),na.rm=TRUE)}))
+zlim2<-range(c(sapply(lpr,function(i){range(values(i),na.rm=TRUE)}),xs$sp[xs$year==yearpred]))
+zlim<-c(zlim1[1],zlim2[2])
+
 img <- image_graph(1500, 1000, res = 150)
 lapply(seq_along(lpr),function(i){
   j<-round(days[i]*sdjul+meanjul,0)
@@ -1650,8 +1656,8 @@ lapply(seq_along(lpr),function(i){
   labels<-paste(round(exp(at),0),c("min pred. > 0",rep("",length(at)-2),"max pred."))
   plot(log(lpr[[i]]),range=log(zlim),col=cols,asp=1,axes=FALSE,bty="n",plg=list(at=at,labels=labels,cex=1.5))
   plot(st_geometry(water),border=NA,col="white",add=TRUE)
-  
-  xxs<-st_transform(st_as_sf(xs[xs$date%in%as.character(seq.Date(xdate-3,xdate+3,by=1)),]),crs=crs(lpr[[1]]))
+  rd<-as.character(seq.Date(xdate-3,xdate+3,by=1))
+  xxs<-st_transform(st_as_sf(xs[xs$date%in%rd,]),crs=crs(lpr[[1]]))
   colobs<-c(log(zlim),log(xxs$sp))
   colobs<-ifelse(is.infinite(colobs),NA,colobs)
   colobs<-colo.scale(colobs,cols)[-(1:2)]
@@ -1660,7 +1666,7 @@ lapply(seq_along(lpr),function(i){
   plot(st_geometry(xxs),pch=21,cex=2,add=TRUE,bg=colobs,col="grey10",lwd=0.4)
   text(st_coordinates(st_geometry(xxs)),label=xxs$sp,cex=0.7,col="grey10",adj=c(0.5,-1))
   #plot(log(lpr[[i]]),zlim=log(zlim),col=cols,asp=1,legend.only=TRUE)
-  mtext(side=3,line=-2,text=paste0(spcode,yearpred),adj=0.15)
+  mtext(side=3,line=-2,text=paste(gsub("_","",spcode),yearpred,"  observations:",paste(format(as.Date(range(rd)),"%b-%d"),collapse=" to "),sep="  "),adj=0.15)
   mtext(side=4,line=-1,text="Number of mosquitos per trap (observed and predicted)",adj=0.5)
   
   ### hist of fit optional
