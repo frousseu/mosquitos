@@ -939,6 +939,9 @@ fit <- cv.glmnet(scale(as.matrix(d[,vars])), d$VEX_Aedes_vexans, family = negati
 # summary of most abundant species per year
 d[,lapply(.SD,sum,na.rm=TRUE),by=year,.SD=species][order(year),][,1:6]
 
+
+cat("\014")
+
 #### Subset data #############################################
 inla.setOption(inla.mode="experimental")
 year<-c(2003:2016);
@@ -956,8 +959,6 @@ a<-aggregate(sp~week,data=xs@data,FUN=function(i){length(i)})
 names(a)[2]<-"nbtraps"
 xs$nbtraps<-a$nbtraps[match(xs$week,a$week)]
 xs<-xs[xs$nbtraps>=0,]
-cat(paste(sort(unique(xs$week)),collapse=", "))
-
 
 xs$jul<-as.integer(format(as.Date(xs$date),"%j"))
 
@@ -980,10 +981,10 @@ lapply(l,function(i){
 par(mfrow=c(1,1),mar=c(0,0,0,0))
 
 
-w<-which(xs$sp>5000000)
-if(any(w)){
-  xs<-xs[-w,]
-}
+#w<-which(xs$sp>5000000)
+#if(any(w)){
+#  xs<-xs[-w,]
+#}
 
 #xs<-xs[substr(xs$week,7,8)%in%c(10:23,25:38),]
 
@@ -1013,7 +1014,7 @@ if(TRUE){
 }
 
 
-edge<-7
+edge<-2
 #domain <- inla.nonconvex.hull(coordinates(ds),convex=-0.015, resolution = c(100, 100))
 #mesh<-inla.mesh.2d(loc.domain=coordinates(ds),max.edge=c(edge,3*edge),offset=c(edge,1*edge),cutoff=edge,boundary=domain,crs=CRS(proj4string(xs)))
 #domain <- inla.nonconvex.hull(coordinates(xs2pts),convex = -0.15, concave = 0.5, resolution = c(340,340))
@@ -1029,17 +1030,10 @@ plot(xs[!xs$db%in%"map",],add=TRUE,pch=16,col="forestgreen")
 plot(mappingzone,add=TRUE)
 mtext(side=3,line=-2,text=paste("edge =",edge,"km"),font=2,cex=1.5)
 
-#### Choose temporal timestep ##################################
-#xs$week<-as.integer(substr(xs$week,1,4))
-xs$temporal<-as.integer(substr(xs$week,1,4))[1] # the [1] gives a single value to temporal hence equivalent to no temporal effect
-
 
 #### Restrict predictions ######################################
 xsmap<-xs[xs$db=="map",]
 xs<-xs[xs$db!="map",]
-keep<-expand.grid(year=year[length(year)],week=32)
-keep<-sort(sapply(1:nrow(keep),function(i){paste(keep$year[i],keep$week[i],sep="_W")}))
-#xsmap<-xsmap[xsmap$week%in%keep,]
 fixpred<-"2003_W32"
 fixgroup<-"2003"
 xsmap<-xsmap[xsmap$week%in%fixpred,]
@@ -1056,25 +1050,6 @@ spde <- inla.spde2.pcmatern(
 #h.spec <- list(theta=list(prior="pc.prec", param=c(0.5,0.5)), rho=list(prior="pc.cor1", param=c(0.9,0.9)))
 #h.spec <- list(theta = list(prior="pc.prec", param=c(1, NA)),
 #               rho = list(prior="pc.cor0", param=c(0.1, NA)))
-u<-0.7
-alpha<-0.5 #sqrt((1-u)/2)+0.001
-c(u,alpha)
-h.spec <- list(#theta=list(prior='pc.prec', param=c(0.5, 0.5)))#,
-  rho = list(prior="pc.cor1", param=c(u,alpha))) #0.9 0.25
-prec.prior <- list(prior='pc.prec', param=c(1, 0.05))
-#h.spec <- list(theta = list(prior = "betacorrelation",param=c(1,3),initial=-1.098))
-#hist(rbeta(10000,1,3))
-
-# show priors on ar1
-co<-seq(-0.99,0.99,by=0.01)
-mu<-0.9#h.spec$rho$param[1]
-alpha<-0.9999#h.spec$rho$param[2]
-par(mfrow=c(1,3))
-hist(inla.pc.rcor1(10000,u=mu,alpha=alpha))
-dens<-inla.pc.dcor1(co,u=mu,alpha=alpha)
-plot(co,dens,type="l",ylim=c(0,max(dens,na.rm=TRUE)))
-#sig<-inla.pc.rprec(10000,u=1,alpha=0.05)
-#hist(1/sig)
 
 # priors on zero inflation probability
 vals<-rnorm(10000,-2,1.5)
@@ -1174,7 +1149,7 @@ models<-lapply(names(lcc),function(n){
     formula(paste(
       "y ~ -1 + ns(jul,knots=knots)",
       paste(paste(all.vars(i[[ex[j,1]]]),collapse=" + "),paste(all.vars(climate[[ex[j,2]]]),collapse= " + "),sep=" + "),
-      paste("offset(lognights) + f(spatial, model=spde, group=spatial.group,control.group=list(model=\"ar1\", hyper=h.spec))"),
+      paste("offset(lognights) + f(spatial, model=spde)"),
       sep=" + "
     ))  
   })
@@ -1188,7 +1163,7 @@ names(models)<-names(lcc)
 
 vifs<-lapply(unlist(models),function(i){
   v<-all.vars(i)
-  v<-v[!v%in%c("y","knots","intercept","lognights","spatial","spde","spatial.group","h.spec")]
+  v<-v[!v%in%c("y","knots","intercept","lognights","spatial","spde")]
   f<-formula(paste("VEX_Aedes_vexans~jul+",paste(v,collapse="+")))
   mod<-lm(f,data=ds@data[ds@data$db!="map",])
   #print(i)
@@ -1221,7 +1196,7 @@ model<-models[["VEX"]][[21]]
 
 
 
-v<-setdiff(all.vars(model),c("y","spatial","intercept","spde","spatial.group","h.spec","year","knots","lognights")) 
+v<-setdiff(all.vars(model),c("y","spatial","intercept","spde","year","knots","lognights")) 
 
 #### Priors on fixed effects ##############################
 vals<-list(intercept=1/35^2,default=1/30^2) #5-30
@@ -1232,7 +1207,7 @@ n<-100
 v2<-v[grep("square",v)]
 v1<-setdiff(v,v2)
 lp<-newdata(x=xs@data[,v1,drop=FALSE],v=v1,n=n,fun=mean,list=FALSE)
-lp<-newdata(x=rbind(xs@data[,v1,drop=FALSE],xsmap@data[,v1,drop=FALSE]),v=v1,n=n,fun=mean,list=FALSE)
+#lp<-newdata(x=rbind(xs@data[,v1,drop=FALSE],xsmap@data[,v1,drop=FALSE]),v=v1,n=n,fun=mean,list=FALSE) # this "partially?) takes the range of observed and predicted, need to better this and make it general to all variables)
 if(length(v2)){
   lp<-lapply(lp,function(i){
     a<-as.data.frame(lapply(i[,gsub("square","",v2),drop=FALSE],"^",2))
@@ -1264,40 +1239,29 @@ names(lp)<-v1
 
 
 #### Make index ##########################################
-k<-length(unique(xs$temporal))
-iset<-inla.spde.make.index("spatial",n.spde=spde$n.spde,n.group=k)
-
+iset<-inla.spde.make.index("spatial",n.spde=spde$n.spde)
 
 #### A matrix ##############################################
-gs<-sort(unique(xs$temporal))
-gs<-match(xsmap$temporal,gs)
-Aest<-inla.spde.make.A(mesh=mesh,loc=coordinates(xs),group=as.integer(factor(xs$temporal))) 
-Amap<-inla.spde.make.A(mesh=mesh,loc=coordinates(xsmap),group=gs) 
-#Apre<-inla.spde.make.A(mesh=mesh,loc=matrix(c(600,5050),ncol=2)[rep(1,n),,drop=FALSE],group=rep(12,n))
-#Apre<-inla.spde.make.A(mesh=mesh,loc=coordinates(xsmap),group=as.integer(factor(xsmap$week)))
-
+Aest<-inla.spde.make.A(mesh=mesh,loc=coordinates(xs)) 
+Amap<-inla.spde.make.A(mesh=mesh,loc=coordinates(xsmap)) 
 
 #### Stacks ################################################
-isetmap<-lapply(iset,"[",iset$spatial.group%in%gs)
 stackest<-inla.stack(tag='est',data=list(y=xs$sp),A=list(Aest,1),effects=list(c(iset,list(intercept=1)),xs@data)) 
-stackmap<-inla.stack(tag='map',data=list(y=xsmap$sp),A=list(Amap,1),effects=list(c(isetmap,list(intercept=1)),xsmap@data)) 
-#stackpre<-inla.stack(tag='pre',data=list(y=xs$sp),A=list(Aest,1),effects=list(c(iset,list(intercept=1)),xs@data)) 
+stackmap<-inla.stack(tag='map',data=list(y=xsmap$sp),A=list(Amap,1),effects=list(c(iset,list(intercept=1)),xsmap@data)) 
 stackfull<-inla.stack(stackest,stackmap)
 
 
 #### Stack vars ############################################
-#fixgroupn<-ceiling(length(sort(unique(xs$temporal)))/2) # which group to use for var pred
-fixgroupn<-match(fixgroup,sort(unique(xs$temporal))) # which group to use for var pred
 for(i in seq_along(v1)){
   le<-nrow(lp[[v1[i]]])
   if(le!=n){
     #AA<-inla.spde.make.A(mesh=mesh,loc=matrix(c(0.3,0.5),ncol=2)[rep(1,le),,drop=FALSE]) # for categorical variables
-    AA<-inla.spde.make.A(mesh=mesh,loc=matrix(c(580,5045),ncol=2)[rep(1,n),,drop=FALSE],group=rep(fixgroupn,n))
+    AA<-inla.spde.make.A(mesh=mesh,loc=matrix(c(580,5045),ncol=2)[rep(1,n),,drop=FALSE])
   }else{
     #AA<-Apn # for numerical variables
-    AA<-inla.spde.make.A(mesh=mesh,loc=matrix(c(580,5045),ncol=2)[rep(1,n),,drop=FALSE],group=rep(fixgroupn,n))
+    AA<-inla.spde.make.A(mesh=mesh,loc=matrix(c(580,5045),ncol=2)[rep(1,n),,drop=FALSE])
   }
-  stack<-inla.stack(tag=v1[i],data=list(y=NA),A=list(AA,1),effects=list(c(lapply(iset,"[",iset$spatial.group==fixgroupn),list(intercept=1)),lp[[v1[i]]][-1])) # -1 removes intercept in lp not ure if essential    
+  stack<-inla.stack(tag=v1[i],data=list(y=NA),A=list(AA,1),effects=list(c(iset,list(intercept=1)),lp[[v1[i]]][-1])) # -1 removes intercept in lp not ure if essential    
   stackfull<-inla.stack(stackfull,stack)
 }
 
@@ -1322,7 +1286,7 @@ m <- inla(model,data=inla.stack.data(stackfull),
           control.fixed=control.fixed,
           control.inla = list(strategy='gaussian',int.strategy = "eb"),
           num.threads="2:2",
-          verbose=FALSE,
+          verbose=TRUE,
           control.compute=list(dic=TRUE,waic=FALSE,cpo=FALSE,config=TRUE),
           #control.mode = list(result = m, restart = TRUE)), # to rerun the model with NA predictions according to https://06373067248184934733.googlegroups.com/attach/2662ebf61b581/sub.R?part=0.1&view=1&vt=ANaJVrHTFUnDqSbj6WTkDo-b_TftcP-dVVwK9SxPo9jmPvDiK58BmG7DpDdb0Ek6xypsqmCSTLDV1rczoY6Acg_Zb0VRPn1w2vRj3vzHYaHT8JMCEihVLbY
           family="nbinomial")#"zeroinflatednbinomial1"
@@ -1381,24 +1345,17 @@ coords<-st_coordinates(st_cast(st_buffer(st_as_sf(xs),10),"MULTIPOINT"))
 nxy <- round(c(diff(range(coords[,1])), diff(range(coords[,2])))/stepsize)
 projgrid <- inla.mesh.projector(mesh, xlim=range(coords[,1]),ylim=range(coords[,2]), dims=nxy,crs=CRS(proj4string(xs)))
 
-
 #### Extract mean and sd ###############################################
 vfield<-c("mean","sd")
 field<-list()
 for(i in seq_along(vfield)){
-  xmean <- list()
-  for (j in 1:length(unique(xs$temporal))){
-    xmean[[j]] <- inla.mesh.project(projgrid,m$summary.random$spatial[[vfield[i]]][iset$spatial.group==j])
-  }
+  xmean <- inla.mesh.project(projgrid,m$summary.random$spatial[[vfield[i]]])
   #### Set NAs ####################################################
   b<-gBuffer(gConvexHull(SpatialPoints(domain$loc,p=CRS(proj4string(ds)))),width=0.1,byid=FALSE)
   o <- over(SpatialPoints(projgrid$lattice$loc,p=CRS(proj4string(ds))),b)
-  for (j in 1:length(unique(xs$temporal)))   xmean[[j]][is.na(o)] <- NA
-  r<-stack(lapply(xmean,function(i){
-    raster(nrows=nxy[2], ncols=nxy[1], xmn=min(projgrid$x), xmx=max(projgrid$x), ymn=min(projgrid$y), ymx=max(projgrid$y),crs=CRS(proj4string(xs)),vals=as.vector(i[,ncol(i):1])) ## some crazy ordering in INLA output be careful
-    #raster(i)
-  }))
-  names(r)<-unique(xs$temporal)
+  xmean[is.na(o)] <- NA
+  r<-raster(nrows=nxy[2], ncols=nxy[1], xmn=min(projgrid$x), xmx=max(projgrid$x), ymn=min(projgrid$y), ymx=max(projgrid$y),crs=CRS(proj4string(xs)),vals=as.vector(xmean[,ncol(xmean):1])) ## some crazy ordering in INLA output be careful
+  names(r)<-vfield[i]
   field[[i]]<-r
 }
 names(field)<-vfield
@@ -1408,21 +1365,17 @@ xsbuff<-st_coordinates(st_cast(st_buffer(st_as_sf(xs),7),"MULTIPOINT"))[,1:2]
 buf<-concaveman(xsbuff,10)
 buf<-spPolygons(buf,crs=CRS(proj4string(xs)))
 buf<-gBuffer(buf,width=1)
+#field<-stack(field)
 r<-mask(field[["mean"]],buf)
 
 #### Plot fields #################################################
 cols<-colo.scale(seq(range(values(r),na.rm=TRUE)[1],range(values(r),na.rm=TRUE)[2],length.out=200),c("darkblue","dodgerblue","ivory2","tomato2","firebrick4"),center=TRUE)#,"grey20"))
-xxs<-split(xs[!is.na(xs$sp),],xs$temporal[!is.na(xs$sp)])
 p.strip<-list(cex=0.65,lines=1,col="black")
-levelplot(r,col.regions=cols,cuts=199,par.strip.text=p.strip,par.settings = list(axis.line = list(col = "grey90"),strip.background = list(col = 'transparent'),strip.border = list(col = 'grey90')),scales = list(col = "black")) +
-  layer(sp.points(xxs[[panel.number()]],col=gray(0,0.5),pch=1,cex=scales:::rescale(c(max(xs$sp),identity(xxs[[panel.number()]]$sp)),to=c(0.3,5))[-1]))+
-  layer(sp.points(xxs[[panel.number()]],col=gray(0,0.5),pch=3,cex=0.25))+
-  layer(sp.polygons(Q,col=gray(0,0.3)))
+levelplot(r,col.regions=cols,cuts=199,margin=FALSE,par.strip.text=p.strip,par.settings = list(axis.line = list(col = "grey90"),strip.background = list(col = 'transparent'),strip.border = list(col = 'grey90')),scales = list(col = "black")) +
+  layer(sp.points(xs,col="black",pch=1,cex=scales:::rescale(c(max(xs$sp),identity(xs$sp)),to=c(0.5,15))[-1]))+
+  layer(sp.points(xs,col="black",pch=3,cex=0.5))+
+  layer(sp.polygons(as(water,"Spatial"),col=gray(0,0.2)))
 par(mfrow=c(1,1))
-
-#plot(m$marginals.hyperpar$`GroupRho for spatial`,type="l",xlim=c(0,1))
-#vv<-seq(0.01,0.99,by=0.01)
-#lines(vv,dbeta(vv,1,5))
 
 
 ### Marginal effects ########################################
@@ -1436,7 +1389,7 @@ nparams<-sapply(params,function(i){
   match(paste0(i,":1"),row.names(samples[[1]]$latent)) 
 }) 
 #table(sapply(strsplit(row.names(samples[[1]]$latent),":"),"[",1))
-nweights<-grep("spatial",row.names(samples[[1]]$latent))[iset$spatial.group==fixgroupn]
+nweights<-grep("spatial",row.names(samples[[1]]$latent))#[iset$spatial.group==fixgroupn]
 
 par(mfrow=n2mfrow(length(v1),asp=3.5/2),mar=c(3,2,1,1),oma=c(0,10,0,0))
 for(k in seq_along(v1)){
@@ -1449,7 +1402,7 @@ for(k in seq_along(v1)){
     #if(is.factor(xs@data[,v[k]])){ # factors never in model (et)
        #spatial<-as.matrix(inla.spde.make.A(mesh=mesh,loc=matrix(c(0.3,0.5),ncol=2)[rep(1,nlevels(size[,v[k]])),,drop=FALSE])) %*% wk
     #}else{
-      spatial<-as.matrix(AA) %*% rep(wk,fixgroupn) # stack was Apn in fire
+      spatial<-as.matrix(AA) %*% wk # stack was Apn in fire
     #}
     #p<-exp(fixed+spatial)
     p<-exp(fixed) # ignores spatial part
@@ -1517,9 +1470,9 @@ pred<-lapply(seq_along(quantities),function(i){
 pred<-stack(pred)
 names(pred)<-quantities
 
-cw<-unique(xsmap$temporal) # watch out if there is more than one week predicted
-mcw<-match(paste0("X",cw),names(field[["mean"]]))
-meansd<-stack(lapply(field,"[[",mcw))
+#cw<-unique(xsmap$temporal) # watch out if there is more than one week predicted
+#mcw<-match(paste0("X",cw),names(field[["mean"]]))
+meansd<-stack(field)
 meansd<-resample(meansd,pred[[1]])
 names(meansd)<-c("mean.spatial.field","sd.spatial.field")
 pred<-stack(pred,meansd)
@@ -1574,11 +1527,11 @@ lapply(names(pred)[c(1,2,5,4,3,6)],function(i){
   }
   plot(pred2[[i]],col=col,zlim=zlim,legend.width=2.5, legend.shrink=1,axis.args=axis.args,legend.args=legend.args,axes=FALSE,box=FALSE,tcl=0.2,mgp=c(1.5,0.0,0),cex.axis=0.7)
   plot(st_geometry(water),border=NA,col="white",add=TRUE)
-  obs<-xs$sp[xs$temporal%in%xsmap$temporal]
+  obs<-xs$sp[xs$week%in%unique(xsmap$week)]
   cexminmax<-c(1,10)  
   ocex<-scales::rescale(c(ifelse(obs==0,1,identity(obs))),to=cexminmax)
   opch<-ifelse(obs==0,4,1)
-  plot(xs[xs$temporal%in%xsmap$temporal,],add=TRUE,cex=ocex,pch=opch,lwd=1,col=gray(0.2,1))
+  plot(xs[xs$week%in%unique(xsmap$week),],add=TRUE,cex=ocex,pch=opch,lwd=1,col=gray(0.2,1))
   #plot(Q,add=TRUE,border=gray(0,0.25))
   #plot(mappingzone,add=TRUE)
   #plot(mesh,add=TRUE)
@@ -1613,7 +1566,7 @@ nparams<-sapply(params,function(i){
   match(paste0(i,":1"),row.names(samples[[1]]$latent)) 
 }) 
 #table(sapply(strsplit(row.names(samples[[1]]$latent),":"),"[",1))
-nweights<-grep("spatial",row.names(samples[[1]]$latent))[iset$spatial.group==unique(gs)]
+nweights<-grep("spatial",row.names(samples[[1]]$latent))
 Amapmatrix<-as.matrix(Amap)
 
 #par(mfrow=n2mfrow(length(v1),asp=3.5/2),mar=c(3,2,1,1),oma=c(0,10,0,0))
@@ -1630,7 +1583,7 @@ p<-lapply(1:nsims,function(i){
   #if(is.factor(xs@data[,v[k]])){ # factors never in model (et)
   #spatial<-as.matrix(inla.spde.make.A(mesh=mesh,loc=matrix(c(0.3,0.5),ncol=2)[rep(1,nlevels(size[,v[k]])),,drop=FALSE])) %*% wk
   #}else{
-  spatial<-Amapmatrix %*% rep(wk,unique(gs)) # stack was Apn in fire
+  spatial<-Amapmatrix %*% wk
   #}
   p<-exp(fixed+spatial)
   #p<-exp(fixed) # ignores spatial part
@@ -1664,9 +1617,8 @@ nparams<-sapply(params,function(i){
 }) 
 #table(sapply(strsplit(row.names(samples[[1]]$latent),":"),"[",1))
 yearpred<-"2003"
-gss<-match(yearpred,sort(unique(xs$temporal)))
-nweights<-grep("spatial",row.names(samples[[1]]$latent))[iset$spatial.group==gss]
-Amapp<-inla.spde.make.A(mesh=mesh,loc=coordinates(xsmap),group=gss) 
+nweights<-grep("spatial",row.names(samples[[1]]$latent))
+Amapp<-inla.spde.make.A(mesh=mesh,loc=coordinates(xsmap)) 
 Amapmatrix<-as.matrix(Amapp)
 #Amapmatrix<-as.matrix(Amap) # previously
 #Amapp1<-inla.spde.make.A(mesh=mesh,loc=coordinates(xsmap),group=gss) 
@@ -1695,7 +1647,7 @@ lpr<-foreach(j=seq_along(days),.packages=c("raster")) %do% {
     #if(is.factor(xs@data[,v[k]])){ # factors never in model (et)
     #spatial<-as.matrix(inla.spde.make.A(mesh=mesh,loc=matrix(c(0.3,0.5),ncol=2)[rep(1,nlevels(size[,v[k]])),,drop=FALSE])) %*% wk
     #}else{
-    spatial<-Amapmatrix %*% rep(wk,unique(gss)) # stack was Apn in fire
+    spatial<-Amapmatrix %*% wk
     #}
     p<-exp(fixed+spatial)
     #p<-exp(fixed) # ignores spatial part
