@@ -41,6 +41,7 @@ library(splines)
 library(glmmTMB)
 library(ggeffects)
 library(patchwork)
+library(car)
 
 #options(device = "X11")
 
@@ -965,7 +966,9 @@ sdjul<-sd(xs$jul[xs$db!="map"])
 
 xs$jul<-(xs$jul-meanjul)/sdjul
 xs$julsquare<-xs$jul^2
-
+xs$lognights<-log(xs$nights) # for offset
+#xs$wetland50<-log(xs$wetland50+0.5)
+#xs$wetland1000<-log(xs$wetland1000+0.5)
 
 l<-split(xs,xs$week)
 par(mfrow=n2mfrow(length(l)),mar=c(0,0,0,0))
@@ -1028,7 +1031,7 @@ mtext(side=3,line=-2,text=paste("edge =",edge,"km"),font=2,cex=1.5)
 
 #### Choose temporal timestep ##################################
 #xs$week<-as.integer(substr(xs$week,1,4))
-xs$temporal<-as.integer(substr(xs$week,1,4))
+xs$temporal<-as.integer(substr(xs$week,1,4))[1] # the [1] gives a single value to temporal hence equivalent to no temporal effect
 
 
 #### Restrict predictions ######################################
@@ -1037,8 +1040,8 @@ xs<-xs[xs$db!="map",]
 keep<-expand.grid(year=year[length(year)],week=32)
 keep<-sort(sapply(1:nrow(keep),function(i){paste(keep$year[i],keep$week[i],sep="_W")}))
 #xsmap<-xsmap[xsmap$week%in%keep,]
-fixpred<-"2004_W32"
-fixgroup<-"2004"
+fixpred<-"2003_W32"
+fixgroup<-"2003"
 xsmap<-xsmap[xsmap$week%in%fixpred,]
 
 
@@ -1046,8 +1049,8 @@ xsmap<-xsmap[xsmap$week%in%fixpred,]
 spde <- inla.spde2.pcmatern(
   mesh=mesh, alpha=2, ### mesh and smoothness parameter
   constr = FALSE, # not exactly sure what this does
-  prior.range=c(5, 0.1), ### P(practic.range<0.05)=0.01
-  prior.sigma=c(0.5, 0.01)) ### P(sigma>1)=0.01
+  prior.range=c(5, 0.01), ### P(practic.range<0.05)=0.01
+  prior.sigma=c(0.5,0.01)) ### P(sigma>1)=0.01
 
 #### Priors on hyperpar ##################################
 #h.spec <- list(theta=list(prior="pc.prec", param=c(0.5,0.5)), rho=list(prior="pc.cor1", param=c(0.9,0.9)))
@@ -1126,13 +1129,85 @@ inla.pc.dgamma(x, lambda = 1, log = FALSE)
 #knots<-seq(min(xs$jul),max(xs$jul),length.out=4)
 #unname(head(model.matrix(sp~ns(jul,df=NULL,knots=knots,Boundary.knots=range(x$jul)),data=x)))
 
+
+#### Model list ##########################################
+
+knots<-seq(min(xs$jul)+0.5,max(xs$jul)-0.5,length.out=9)
+
+climate<-list(
+  ~ anom2 + prcp2,
+  ~ anom7 + prcp7,
+  ~ anom30 + prcp30,
+  ~ anom90 + prcp90,
+  ~ anom2 + prcp2 + anom7 + prcp7,
+  ~ anom2 + prcp2 + anom30 + prcp30,
+  ~ anom2 + prcp2 + anom90 + prcp90
+)
+
+lcc<-list(
+  VEX=list(
+    ~ agriculture50 + forest50,
+    ~ agriculture1000+ forest1000,
+    ~ agriculture50 + forest50 + agriculture1000+ forest1000
+  ),
+  CPR=list(
+    ~ urban50 + forest50,
+    ~ urban1000+ forest1000,
+    ~ urban50 + forest50 + urban1000+ forest1000
+  ),
+  CQP=list(
+    ~ wetland50 + forest50,
+    ~ wetland1000+ forest1000,
+    ~ wetland50 + forest50 + wetland1000+ forest1000
+  ),
+  STM=list(
+    ~ wetland50 + forest50,
+    ~ wetland1000+ forest1000,
+    ~ wetland50 + forest50 + wetland1000+ forest1000
+  )
+)
+
+models<-lapply(names(lcc),function(n){
+  i<-lcc[[n]]
+  ex<-expand.grid(seq_along(i),seq_along(climate))
+  res<-lapply(1:nrow(ex),function(j){
+    formula(paste(
+      "y ~ -1 + ns(jul,knots=knots)",
+      paste(paste(all.vars(i[[ex[j,1]]]),collapse=" + "),paste(all.vars(climate[[ex[j,2]]]),collapse= " + "),sep=" + "),
+      paste("offset(lognights) + f(spatial, model=spde, group=spatial.group,control.group=list(model=\"ar1\", hyper=h.spec))"),
+      sep=" + "
+    ))  
+  })
+  names(res)<-paste(n,1:nrow(ex),sep="_")
+  res
+})
+names(models)<-names(lcc)
+
+
+#### VIFS #################################################
+
+vifs<-lapply(unlist(models),function(i){
+  v<-all.vars(i)
+  v<-v[!v%in%c("y","knots","intercept","lognights","spatial","spde","spatial.group","h.spec")]
+  f<-formula(paste("VEX_Aedes_vexans~jul+",paste(v,collapse="+")))
+  mod<-lm(f,data=ds@data[ds@data$db!="map",])
+  #print(i)
+  vif(mod)  
+})
+vifs[sapply(vifs,function(i){any(i>3)})]
+
+
+
 #### Model formula ########################################
 #model <- y ~ -1 + intercept + jul + julsquare + forest50 + urban50 + urban1000 + agriculture1000  + tmax7 + tmax2 + prcp30 + f(spatial, model=spde, group=spatial.group,control.group=list(model='ar1', hyper=h.spec))
 
 # using knots allow to fix the values for each jul across newdata
 knots<-seq(min(xs$jul)+0.5,max(xs$jul)-0.5,length.out=7)
-model <- y ~ -1 + intercept + ns(jul,knots=knots) + urban50 + urban1000+ forest50 + forest1000 + anom2 + prcp2 + anom30 + prcp30 + f(spatial, model=spde, group=spatial.group,control.group=list(model='ar1', hyper=h.spec))
 
+model<-models[["VEX"]][[21]]
+#model<- y ~ -1 + ns(jul,knots=knots) + urban50 + forest50 + urban1000 + forest1000 + anom2 + prcp2 + anom90 + prcp90 + offset(lognights) + f(spatial, model = spde, group = spatial.group, control.group = list(model = "ar1",hyper = h.spec))
+
+#model <- y ~ -1 + ns(jul,knots=knots) + urban50 + urban1000+ forest50 + forest1000 + anom2 + prcp2 + anom30 + prcp30 + offset(lognights) + f(spatial, model=spde, group=spatial.group,control.group=list(model='ar1', hyper=h.spec))
 #model <- y ~ -1 + intercept + bs(jul) + f(spatial, model=spde, group=spatial.group,control.group=list(model='ar1', hyper=h.spec))
 #model <- y ~ -1 + intercept + jul + julsquare + forest1000 + f(spatial, model=spde, group=spatial.group,control.group=list(model='ar1', hyper=h.spec))
 #model <- y ~ -1 + intercept + jul + julsquare + f(spatial, model=spde, group=spatial.group,control.group=list(model='ar1', hyper=h.spec)) 
@@ -1142,17 +1217,22 @@ model <- y ~ -1 + intercept + ns(jul,knots=knots) + urban50 + urban1000+ forest5
 #formulae <- y ~ 0 + w + f(spatial, model=spde) + f(week,model="rw1")
 #formulae <- y ~ 0 + w + f(spatial, model=spde, group=spatial.group,control.group=list(model='exchangeable')) 
 
-v<-setdiff(all.vars(model),c("y","spatial","intercept","spde","spatial.group","h.spec","year","knots")) 
+
+
+
+
+v<-setdiff(all.vars(model),c("y","spatial","intercept","spde","spatial.group","h.spec","year","knots","lognights")) 
 
 #### Priors on fixed effects ##############################
 vals<-list(intercept=1/35^2,default=1/30^2) #5-30
 control.fixed<-list(prec=vals,mean=list(intercept=0,default=0),expand.factor.strategy = "inla")
 
 #### Newdata ########################################
-n<-50
+n<-100
 v2<-v[grep("square",v)]
 v1<-setdiff(v,v2)
 lp<-newdata(x=xs@data[,v1,drop=FALSE],v=v1,n=n,fun=mean,list=FALSE)
+lp<-newdata(x=rbind(xs@data[,v1,drop=FALSE],xsmap@data[,v1,drop=FALSE]),v=v1,n=n,fun=mean,list=FALSE)
 if(length(v2)){
   lp<-lapply(lp,function(i){
     a<-as.data.frame(lapply(i[,gsub("square","",v2),drop=FALSE],"^",2))
@@ -1175,6 +1255,7 @@ if(TRUE){ # adds basis columns to new data
     res
   })
 }
+lp<-lapply(lp,function(i){cbind(intercept=1,i)}) # add intercept to lp
 names(lp)<-v1
 #head(lp[[1]])
 #model<-formula(paste("y~-1+",paste(v,collapse="+")))
@@ -1216,7 +1297,7 @@ for(i in seq_along(v1)){
     #AA<-Apn # for numerical variables
     AA<-inla.spde.make.A(mesh=mesh,loc=matrix(c(580,5045),ncol=2)[rep(1,n),,drop=FALSE],group=rep(fixgroupn,n))
   }
-  stack<-inla.stack(tag=v1[i],data=list(y=NA),A=list(AA,1),effects=list(c(lapply(iset,"[",iset$spatial.group==fixgroupn),list(intercept=1)),lp[[v1[i]]]))     
+  stack<-inla.stack(tag=v1[i],data=list(y=NA),A=list(AA,1),effects=list(c(lapply(iset,"[",iset$spatial.group==fixgroupn),list(intercept=1)),lp[[v1[i]]][-1])) # -1 removes intercept in lp not ure if essential    
   stackfull<-inla.stack(stackfull,stack)
 }
 
@@ -1241,7 +1322,7 @@ m <- inla(model,data=inla.stack.data(stackfull),
           control.fixed=control.fixed,
           control.inla = list(strategy='gaussian',int.strategy = "eb"),
           num.threads="2:2",
-          verbose=TRUE,
+          verbose=FALSE,
           control.compute=list(dic=TRUE,waic=FALSE,cpo=FALSE,config=TRUE),
           #control.mode = list(result = m, restart = TRUE)), # to rerun the model with NA predictions according to https://06373067248184934733.googlegroups.com/attach/2662ebf61b581/sub.R?part=0.1&view=1&vt=ANaJVrHTFUnDqSbj6WTkDo-b_TftcP-dVVwK9SxPo9jmPvDiK58BmG7DpDdb0Ek6xypsqmCSTLDV1rczoY6Acg_Zb0VRPn1w2vRj3vzHYaHT8JMCEihVLbY
           family="nbinomial")#"zeroinflatednbinomial1"
@@ -1378,6 +1459,7 @@ for(k in seq_along(v1)){
   p<-t(apply(p,1,function(i){c(quantile(i,0.0275),mean(i),quantile(i,0.975))}))
   if(nrow(lp[[v1[k]]])==n){
     vals<-lp[[v1[k]]][,v1[k]]
+    #if(v1[k]%in%c("wetland50","wetland1000")){vals<-exp(vals)-0.5}
     plot(vals,p[,2],type="l",ylim=c(0,200),xlab=v1[k],font=2,ylab="",lty=1,yaxt="n",mgp=c(2,0.45,0),tcl=-0.3)
     points(xs@data[,v1[k]],xs$sp,pch=1,col=gray(0,0.1))
     lines(vals,p[,2],lwd=3,col=gray(0,0.8))
@@ -1581,7 +1663,7 @@ nparams<-sapply(params,function(i){
   match(paste0(i,":1"),row.names(samples[[1]]$latent)) 
 }) 
 #table(sapply(strsplit(row.names(samples[[1]]$latent),":"),"[",1))
-yearpred<-"2013"
+yearpred<-"2003"
 gss<-match(yearpred,sort(unique(xs$temporal)))
 nweights<-grep("spatial",row.names(samples[[1]]$latent))[iset$spatial.group==gss]
 Amapp<-inla.spde.make.A(mesh=mesh,loc=coordinates(xsmap),group=gss) 
@@ -1618,7 +1700,7 @@ lpr<-foreach(j=seq_along(days),.packages=c("raster")) %do% {
     p<-exp(fixed+spatial)
     #p<-exp(fixed) # ignores spatial part
     #p<-spatial
-    print(i)
+    #print(i)
     p
   })
   p<-do.call("cbind",p)
@@ -1627,6 +1709,7 @@ lpr<-foreach(j=seq_along(days),.packages=c("raster")) %do% {
   pr<-rasterize(xsmap,pgrid,field="preds",fun=mean)
   pr<-mask(pr,buf)
   #pr<-disaggregate(pr,fact=1,method="bilinear")
+  print(j)
   pr
 }
 
@@ -1650,10 +1733,19 @@ lapply(seq_along(lpr),function(i){
   xdate<-as.Date(format(as.Date(j,origin=paste0(yearpred,"-01-01")),"%Y-%m-%d"))
   gw<-layout(matrix(c(1,rep(2,20)),ncol=1))
   par(mar=c(1,0,0,3),oma=c(0,0,0,5))
-  plot(xdate,1,pch=25,xlim=datelim,yaxt="n",cex=2,bty="n",yaxt="n",col=1,bg=1)
+  plot(xdate,1,pch=25,xlim=datelim,yaxt="n",cex=2,bty="n",col=1,bg=1)
   par(mar=c(0,0,0,0))
   at<-seq(min(values(log(lpr[[i]])),na.rm=TRUE),max(values(log(lpr[[i]])),na.rm=TRUE),length.out=5)
-  labels<-paste(round(exp(at),0),c("min pred. > 0",rep("",length(at)-2),"max pred."))
+  #lab<-ifelse(round(exp(at),0)==0,round(exp(at),2),round(exp(at),0))
+  lab<-sapply(at,function(a){
+    e<-exp(a)
+    if(e<=0.001){return(round(e,4))}
+    if(e<=0.01){return(round(e,3))}
+    if(e<=0.1){return(round(e,2))}
+    if(e<=2){return(round(e,1))}
+    if(e>2){return(round(e,0))}
+  })
+  labels<-paste(lab,c("min pred. > 0",rep("",length(at)-2),"max pred."))
   plot(log(lpr[[i]]),range=log(zlim),col=cols,asp=1,axes=FALSE,bty="n",plg=list(at=at,labels=labels,cex=1.5))
   plot(st_geometry(water),border=NA,col="white",add=TRUE)
   rd<-as.character(seq.Date(xdate-3,xdate+3,by=1))
@@ -1668,7 +1760,11 @@ lapply(seq_along(lpr),function(i){
   #plot(log(lpr[[i]]),zlim=log(zlim),col=cols,asp=1,legend.only=TRUE)
   mtext(side=3,line=-2,text=paste(gsub("_","",spcode),yearpred,"  observations:",paste(format(as.Date(range(rd)),"%b-%d"),collapse=" to "),sep="  "),adj=0.15)
   mtext(side=4,line=-1,text="Number of mosquitos per trap (observed and predicted)",adj=0.5)
-  
+  xp<-xmin(lpr[[1]])+((xmax(lpr[[1]])-xmin(lpr[[1]]))*c(0.58,0.65))
+  yp<-rep(ymin(lpr[[1]])+((ymax(lpr[[1]])-ymin(lpr[[1]]))*0.97),2)  
+  points(xp,yp,pch=21,cex=2,bg=colobs[c(which.min(xxs$sp),which.max(xxs$sp))],col="grey10",lwd=0.4)
+  text(xp,yp,label=xxs$sp[c(which.min(xxs$sp),which.max(xxs$sp))],cex=0.7,col="grey10",adj=c(0.5,-1))
+  text(xp,yp,label=c("min obs.","max obs."),cex=0.7,col="grey10",adj=c(1.2,0.5))
   ### hist of fit optional
   #print(i)
   #xxsb<-st_buffer(xxs,2)
@@ -1690,13 +1786,13 @@ dev.off()
 animation <- image_animate(img, fps = 1, optimize = TRUE)
 #print(animation)
 
-image_write(animation, "C:/Users/God/Downloads/animate.gif")
+image_write(animation,file.path("C:/Users/God/Downloads",paste0(paste0(spcode,yearpred),".gif")))
 
 
 
 ### Model checks ##############################################
 
-# make sure this is the right way to do it and check if parameters are ok. I'm sampling from the sampled hyperpar for each sims, but this is hacky and not correctly jointly sampled
+# make sure this is the right way to do it and check if paramete rs are ok. I'm sampling from the sampled hyperpar for each sims, but this is hacky and not correctly jointly sampled
 
 # figure out if the predicted response used already includes the zero-inflation part. If so, the simulation of observations below is likely wrong. If not, meaning the predictor is the nbinom mean before zero-inflation, then the simulated value are probably ok.
 
@@ -1733,8 +1829,13 @@ invisible(lapply(1:ncol(matprob[,1:100]),function(i){
 }))
 points(h2$mids,h2$density,pch=16,cex=1.25,col=alpha("red",0.7))
 
+### Explanatory/Predictive power #############################
 
-### SPDE posteriors #############################
+plot(m$summary.fitted.values[index[["est"]],1],xs$sp,asp=1)
+cor(m$summary.fitted.values[index[["est"]],1],xs$sp)^2
+
+
+### SPDE posteriors ##########################################
 
 res <- inla.spde.result(m, "spatial", spde)
 par(mfrow=c(2,1))
@@ -1812,13 +1913,30 @@ plot(ds,add=TRUE)
 plot(xsmap,add=TRUE)
 
 
-mm<-glmmTMB(sp ~ ns(jul,knots=knots) + urban50 + urban1000+ forest50 + forest1000 + anom2 + prcp2 + anom30 + prcp30, ziformula=~0, data=xs@data[xs$db!="map",],family=nbinom2())
+library(patchwork)
+library(ggplot2)
+library(ggeffects)
+
+
+dat<-xs@data[xs$db!="map",]
+dat$we<-log(dat$wetland1000+0.001)
+
+
+mm<-glmmTMB(sp ~ ns(jul,df=9) + ns(wetland50,df=9) + ns(wetland1000,df=9) + ns(forest50,df=9) + ns(forest1000,df=9) + anom2 + prcp2 + anom30 + prcp30 + offset(lognights), ziformula=~0, data=dat,family=nbinom2())
 
 vs<-all.vars(formula(mm))[-1]
-gl<-lapply(vs,function(i){
+gl<-lapply(vs[2:5],function(i){
   g<-ggeffect(mm,terms=paste(i,"[n=100]"))
-  plot(g,add=FALSE,jitter=FALSE)+coord_cartesian(ylim = c(0, 600)) 
+  plot(g,add=TRUE,jitter=FALSE)+coord_cartesian(ylim = c(0, 500)) 
 })
 wrap_plots(gl,nrow=2)
+
+
+lp<-newdata(x=dat[,vs,drop=FALSE],v=vs,n=100,fun=mean,list=FALSE)
+we<-seq(min(dat$we),0,length.out=100)
+nd<-cbind(we=we,lp[["we"]][rep(1,length(we)),][,-2])
+p<-predict(mm,newdata=nd,type="response")
+plot(exp(nd$we),p)
+
 
 
