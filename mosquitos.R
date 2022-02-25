@@ -205,26 +205,6 @@ foreach(k=seq_along(tiles)[1:13],.packages=c("abind","mgcv","raster")) %do% {
 source("https://raw.githubusercontent.com/frousseu/FRutils/master/R/colo.scale.R")
 source("https://raw.githubusercontent.com/frousseu/UdeS/master/GStecher/newdata.R")
 
-### this is to turnthe formula using dummy variables for factors
-mmatrix<-function(i,dat){
-  if(!is.list(i)){
-    i<-list(i)  
-  }
-  lapply(i,function(j){
-    mod<-as.character(j)
-    mod[3]<-gsub(" \\+ f\\(spatial, model = spde\\)","",mod[3]) # remove spatial effect
-    mod[3]<-gsub("-1 \\+ intercept \\+ ","",mod[3]) # remove spatial effect and intercept notation
-    mod<-as.formula(paste0(mod[c(1,3)],collapse=" "))
-    model.matrix(mod,dat)[,-1]
-  })
-}
-mm<-mmatrix(modell,size)
-
-
-### this is the model with the dummy variable from the model.matrix as suggested by the pdf E Krainski on using factors
-modellmm<-lapply(mm,function(i){
-  as.formula(paste("y ~ -1 + intercept +",paste(dimnames(i)[[2]],collapse=" + "),"+ f(spatial, model = spde)"))
-})
 
 ### function for turning mesh to sp polygons
 inla.mesh2sp <- function(mesh) {
@@ -565,7 +545,7 @@ plot(ds,add=TRUE,pch=1)
 # this allows to make the lcc/daymet extractions in a single step
 # and INLA does predictions for NA response values
 
-pgrid<-raster(ext=extent(mappingzone),res=c(1,1),crs=CRS(proj4string(mappingzone)))
+pgrid<-raster(ext=extent(mappingzone),res=c(0.5,0.5),crs=CRS(proj4string(mappingzone)))
 pgrid<-setValues(pgrid,1)
 g<-xyFromCell(pgrid,1:ncell(pgrid),spatial=TRUE)
 plot(pgrid)
@@ -595,6 +575,11 @@ map<-cbind(info,coords)
 coordinates(map)<-~lon+lat
 proj4string(map)<-CRS(proj4string(ds))
 
+# subset predictions only for a given week (reduces extractions times/memory use)
+#map<-map[substr(map$week,6,8)%in%"W32",]
+map<-map[map$week%in%"2005_W32",]
+
+# id region in case of spatial validation
 map$region<-st_join(st_as_sf(map),reg,join=st_intersects)$region
 #plot(map,col=factor(map$region))
 
@@ -602,8 +587,7 @@ setdiff(names(ds),names(map))
 setdiff(names(map),names(ds))
 
 map<-map[,names(ds)]
-# subset predictions only for a given week (reduces extractions times/memory use)
-map<-map[substr(map$week,6,8)%in%"W32",]
+
 
 ds<-rbind(ds,map)
 
@@ -614,7 +598,8 @@ ds<-ds[!is.na(o),]
 
 ### Weather lags #####################################
 
-weathervars<-c("tmean","tmax","tmin","prcp","anom")
+weathervars<-c("tmean","prcp","anom")
+#weathervars<-c("tmean","tmax","tmin","prcp","anom")
 #weathervars<-c("anom")
 #weathervars<-c("tmax","anom")
 #weathervars<-c("anom")
@@ -754,7 +739,7 @@ for(v in seq_along(weathervars)){
 #sum(x*p)/sum(p)
 
 
-plot(ds@data[ds$db!="map",unique(c("jul",names(ds)[grep("tmax|prcp",names(ds))]))])
+plot(ds@data[ds$db!="map",unique(c("jul",names(ds)[grep("tmean|prcp",names(ds))]))])
 
 
 ### LULC data #########################################
@@ -854,6 +839,11 @@ options(scipen=20)
 rev(sort(sapply(ls(),function(i){object.size(get(i))})))/1024^2
 
 rm(e,lf,dsbuffer,can,map,info,coords,lbuffer,buffers,que,inspq,gdg);gc();gc()
+
+##### Check if lcc OK ############################################
+
+par(mar=c(0,0,0,0),oma=c(0,0,0,0))
+plot(ds[ds$db=="map",],pch=21,cex=0.5,col=NA,bg=gray(scales::rescale(ds$urban1000[ds$db=="map"],c(0.05,0.99))))
 
 ##### Show locations and % #######################################
 #x<-ds[!duplicated(ds$idlulc),]
@@ -1111,10 +1101,6 @@ mtext(side=3,line=-2,text=paste("edge =",edge,"km"),font=2,cex=1.5)
 #### Restrict predictions ######################################
 xsmap<-xs[xs$db=="map",]
 xs<-xs[xs$db!="map",]
-fixpred<-"2003_W32"
-fixgroup<-"2003"
-xsmap<-xsmap[xsmap$week%in%fixpred,]
-
 
 #### SPDE #################################################
 spde <- inla.spde2.pcmatern(
@@ -1398,7 +1384,7 @@ nparams<-sapply(params,function(i){
   match(paste0(i,":1"),row.names(samples[[1]]$latent)) 
 }) 
 #table(sapply(strsplit(row.names(samples[[1]]$latent),":"),"[",1))
-nweights<-grep("spatial",row.names(samples[[1]]$latent))#[iset$spatial.group==fixgroupn]
+nweights<-grep("spatial",row.names(samples[[1]]$latent))
 
 par(mfrow=n2mfrow(length(v1),asp=3.5/2),mar=c(3,2,1,1),oma=c(0,10,0,0))
 for(k in seq_along(v1)){
