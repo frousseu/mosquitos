@@ -1413,16 +1413,17 @@ for(k in seq_along(v1)){
     #}else{
       spatial<-as.matrix(AA) %*% wk # stack was Apn in fire
     #}
-    #p<-exp(fixed+spatial)
-    p<-exp(fixed) # ignores spatial part
+    #p<-fixed+spatial
+    p<-fixed # ignores spatial part
     p
   })
   p<-do.call("cbind",p)
   p<-t(apply(p,1,function(i){c(quantile(i,0.0275),mean(i),quantile(i,0.975))}))
+  p<-exp(p)
   if(nrow(lp[[v1[k]]])==n){
     vals<-bscale(lp[[v1[k]]][,v1[k]],v=v1[k])
     #if(v1[k]%in%c("wetland50","wetland1000")){vals<-exp(vals)-0.5}
-    plot(vals,p[,2],type="l",ylim=c(0,200),xlab=v1[k],font=2,ylab="",lty=1,yaxt="n",mgp=c(2,0.45,0),tcl=-0.3)
+    plot(vals,p[,2],type="l",ylim=c(0,min(c(max(p[,3]),max(xs$sp))))*1.3,xlab=v1[k],font=2,ylab="",lty=1,yaxt="n",mgp=c(2,0.45,0),tcl=-0.3)
     points(bscale(xs@data[,v1[k]],v=v1[k]),xs$sp,pch=1,col=gray(0,0.1))
     lines(vals,p[,2],lwd=3,col=gray(0,0.8))
     #lines(vals,p[,1],lty=3)
@@ -1451,7 +1452,6 @@ for(i in seq_along(v1)){
     vals<-bscale(dat[[v1[i]]],v=v1[i])
     plot(vals,p[,2],type="l",ylim=c(0,min(c(max(p[,3]),max(xs$sp)))),xlab=v1[i],font=2,ylab="",lty=1,yaxt="n",mgp=c(2,0.45,0),tcl=-0.3)
     #plot(dat[[v1[i]]],p[,2],type="l",ylim=c(0,300),xlab=v1[i],font=2,ylab="",lty=1,yaxt="n",mgp=c(2,0.45,0),tcl=-0.3)
-    
     lines(vals,p[,1],lty=3,lwd=1)
     lines(vals,p[,3],lty=3,lwd=1)
     points(bscale(xs@data[,v1[i]],v=v1[i]),xs$sp,pch=16,col=gray(0,0.07))
@@ -1598,15 +1598,15 @@ p<-lapply(1:nsims,function(i){
   #}else{
   spatial<-Amapmatrix %*% wk
   #}
-  p<-exp(fixed+spatial)
-  #p<-exp(fixed) # ignores spatial part
+  p<-fixed+spatial
+  #p<-fixed # ignores spatial part
   #p<-spatial
   print(i)
   p
 })
 p<-do.call("cbind",p)
 p<-t(apply(p,1,function(i){c(quantile(i,0.0275),mean(i),quantile(i,0.975))}))
-p
+p<-exp(p)
 
 xsmap$preds<-p[,2]
 
@@ -1614,8 +1614,9 @@ pr<-rasterize(xsmap,pgrid,field="preds",fun=mean)
 pr<-mask(pr,buf)
 #pr<-disaggregate(pr,fact=2,method="bilinear")
 
-par(mfrow=c(1,2))
+par(mfrow=c(1,2),oma=c(0,0,0,4))
 plot(pred[[1]])
+#plot(resample(pred[[1]],pr))
 plot(pr)
 
 
@@ -1662,14 +1663,15 @@ lpr<-foreach(j=seq_along(days),.packages=c("raster")) %do% {
     #}else{
     spatial<-Amapmatrix %*% wk
     #}
-    p<-exp(fixed+spatial)
-    #p<-exp(fixed) # ignores spatial part
+    p<-fixed+spatial
+    #p<-fixed # ignores spatial part
     #p<-spatial
     #print(i)
     p
   })
   p<-do.call("cbind",p)
   p<-t(apply(p,1,function(i){c(quantile(i,0.0275),mean(i),quantile(i,0.975))}))
+  p<-exp(p)
   xsmap$preds<-p[,2]
   pr<-rasterize(xsmap,pgrid,field="preds",fun=mean)
   pr<-mask(pr,buf)
