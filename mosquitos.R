@@ -43,7 +43,9 @@ library(ggeffects)
 library(patchwork)
 library(car)
 
-#options(device = "X11")
+#cat("\014")
+options(device = "X11")
+grDevices::windows.options(record=TRUE)
 
 Sys.setlocale("LC_ALL","English")
 
@@ -51,7 +53,7 @@ Sys.setlocale("LC_ALL","English")
 # all files should be in this folder
 path<-"C:/Users/God/Documents/mosquitos/data"
 setwd(path)
-#load("mosquitos.RData")
+load("mosquitos.RData")
 
 ### Daymet download #########################################
 
@@ -937,12 +939,75 @@ fit <- cv.glmnet(scale(as.matrix(d[,vars])), d$VEX_Aedes_vexans, family = negati
 #load("mosquitos.RData")
 
 # summary of most abundant species per year
-d[,lapply(.SD,sum,na.rm=TRUE),by=year,.SD=species][order(year),][,1:6]
+#d[,lapply(.SD,sum,na.rm=TRUE),by=year,.SD=species][order(year),][,1:6]
+
+#### Model list ##########################################
+
+climate<-list(
+  ~ anom2 + prcp2,
+  ~ anom7 + prcp7,
+  ~ anom30 + prcp30,
+  ~ anom90 + prcp90,
+  ~ anom2 + prcp2 + anom7 + prcp7,
+  ~ anom2 + prcp2 + anom30 + prcp30,
+  ~ anom2 + prcp2 + anom90 + prcp90
+)
+
+lcc<-list(
+  VEX=list(
+    ~ agriculture50 + forest50,
+    ~ agriculture1000+ forest1000,
+    ~ agriculture50 + forest50 + agriculture1000+ forest1000
+  ),
+  CPR=list(
+    ~ urban50 + forest50,
+    ~ urban1000+ forest1000,
+    ~ urban50 + forest50 + urban1000+ forest1000
+  ),
+  CQP=list(
+    ~ wetland50 + forest50,
+    ~ wetland1000+ forest1000,
+    ~ wetland50 + forest50 + wetland1000+ forest1000
+  ),
+  STM=list(
+    ~ wetland50 + forest50,
+    ~ wetland1000+ forest1000,
+    ~ wetland50 + forest50 + wetland1000+ forest1000
+  )
+)
+
+models<-lapply(names(lcc),function(n){
+  i<-lcc[[n]]
+  ex<-expand.grid(seq_along(i),seq_along(climate))
+  res<-lapply(1:nrow(ex),function(j){
+    formula(paste(
+      "y ~ -1 + ns(jul,knots=knots)",
+      paste(paste(all.vars(i[[ex[j,1]]]),collapse=" + "),paste(all.vars(climate[[ex[j,2]]]),collapse= " + "),sep=" + "),
+      paste("offset(lognights) + f(spatial, model=spde)"),
+      sep=" + "
+    ))  
+  })
+  names(res)<-paste(n,1:nrow(ex),sep="_")
+  res
+})
+names(models)<-names(lcc)
 
 
-cat("\014")
+#### VIFS #################################################
+
+vifs<-lapply(unlist(models),function(i){
+  v<-all.vars(i)
+  v<-v[!v%in%c("y","knots","intercept","lognights","spatial","spde")]
+  f<-formula(paste("VEX_Aedes_vexans~jul+",paste(v,collapse="+")))
+  mod<-lm(f,data=ds@data[ds@data$db!="map",])
+  #print(i)
+  vif(mod)  
+})
+vifs[sapply(vifs,function(i){any(i>3)})]
+
 
 #### Subset data #############################################
+cat("\014")
 inla.setOption(inla.mode="experimental")
 year<-c(2003:2016);
 weeks<-10:50
@@ -962,10 +1027,20 @@ xs<-xs[xs$nbtraps>=0,]
 
 xs$jul<-as.integer(format(as.Date(xs$date),"%j"))
 
-meanjul<-mean(xs$jul[xs$db!="map"])
-sdjul<-sd(xs$jul[xs$db!="map"])
+#meanjul<-mean(xs$jul[xs$db!="map"])
+#sdjul<-sd(xs$jul[xs$db!="map"])
 
-xs$jul<-(xs$jul-meanjul)/sdjul
+#### Scale variables ########################
+
+vs<-unique(unlist(lapply(unlist(models),all.vars)))
+vs<-vs[!vs%in%c("lognights","spde","knots","y","spatial")]
+vscale<-lapply(xs@data[xs$db!="map",vs],function(i){c(mean=mean(i),sd=sd(i))})
+xs@data[vs]<-lapply(vs,function(i){(xs@data[[i]]-vscale[[i]][1])/vscale[[i]][2]})
+bscale<-function(x,v=NULL){
+  (x*vscale[[v]]["sd"])+vscale[[v]]["mean"]
+}
+
+#xs$jul<-(xs$jul-meanjul)/sdjul
 xs$julsquare<-xs$jul^2
 xs$lognights<-log(xs$nights) # for offset
 #xs$wetland50<-log(xs$wetland50+0.5)
@@ -998,7 +1073,7 @@ if(TRUE){
   xs2map<-xs2[xs2$db=="map",]
   xs2<-xs2[xs2$db!="map",]
   
-  predmap<-st_buffer(concaveman(xs2,2),0)
+  predmap<-st_buffer(concaveman(xs2,2.5),0)
   plot(st_geometry(predmap))
   plot(st_geometry(xs2),add=TRUE)
   xs2map<-xs2map[predmap,]
@@ -1011,6 +1086,9 @@ if(TRUE){
   
   plot(st_geometry(predmap),add=TRUE,border="red")
   
+  plot(xs2pts,add=TRUE)
+  plot(xs3pts,add=TRUE)
+  
 }
 
 
@@ -1018,16 +1096,15 @@ edge<-2
 #domain <- inla.nonconvex.hull(coordinates(ds),convex=-0.015, resolution = c(100, 100))
 #mesh<-inla.mesh.2d(loc.domain=coordinates(ds),max.edge=c(edge,3*edge),offset=c(edge,1*edge),cutoff=edge,boundary=domain,crs=CRS(proj4string(xs)))
 #domain <- inla.nonconvex.hull(coordinates(xs2pts),convex = -0.15, concave = 0.5, resolution = c(340,340))
-domain <- inla.nonconvex.hull(rbind(coordinates(xs2pts),coordinates(xs3pts)))
+domain <- inla.nonconvex.hull(rbind(coordinates(xs2pts),coordinates(xs3pts)),convex = -0.05)
 #ims<-inla.mesh.segment(loc=coordinates(xs2pts))
-mesh<-inla.mesh.2d(loc.domain=NULL,max.edge=c(edge,4*edge),offset=NULL,cutoff=edge,boundary=domain,crs=CRS(proj4string(xs)))
+mesh<-inla.mesh.2d(loc.domain=NULL,max.edge=c(edge,3*edge),offset=c(edge,3*edge),cutoff=edge,boundary=domain,crs=CRS(proj4string(xs)))
 #mesh<-inla.mesh.2d(boundary=domain,max.edge=c(edge,2*edge),offset=NULL,cutoff=0.5*edge,crs=CRS(proj4string(xs)))
 plot(mesh,asp=1)
 plot(Q,col="grey90",border="white",add=TRUE,lwd=2)
 plot(mesh,asp=1,add=TRUE)
 plot(xs[!xs$db%in%"map",],add=TRUE,pch=16,col="forestgreen")
-#plot(xs,add=TRUE,pch=16,col=alpha("red",0.5))
-plot(mappingzone,add=TRUE)
+#plot(mappingzone,add=TRUE)
 mtext(side=3,line=-2,text=paste("edge =",edge,"km"),font=2,cex=1.5)
 
 
@@ -1105,79 +1182,11 @@ inla.pc.dgamma(x, lambda = 1, log = FALSE)
 #unname(head(model.matrix(sp~ns(jul,df=NULL,knots=knots,Boundary.knots=range(x$jul)),data=x)))
 
 
-#### Model list ##########################################
-
-knots<-seq(min(xs$jul)+0.5,max(xs$jul)-0.5,length.out=9)
-
-climate<-list(
-  ~ anom2 + prcp2,
-  ~ anom7 + prcp7,
-  ~ anom30 + prcp30,
-  ~ anom90 + prcp90,
-  ~ anom2 + prcp2 + anom7 + prcp7,
-  ~ anom2 + prcp2 + anom30 + prcp30,
-  ~ anom2 + prcp2 + anom90 + prcp90
-)
-
-lcc<-list(
-  VEX=list(
-    ~ agriculture50 + forest50,
-    ~ agriculture1000+ forest1000,
-    ~ agriculture50 + forest50 + agriculture1000+ forest1000
-  ),
-  CPR=list(
-    ~ urban50 + forest50,
-    ~ urban1000+ forest1000,
-    ~ urban50 + forest50 + urban1000+ forest1000
-  ),
-  CQP=list(
-    ~ wetland50 + forest50,
-    ~ wetland1000+ forest1000,
-    ~ wetland50 + forest50 + wetland1000+ forest1000
-  ),
-  STM=list(
-    ~ wetland50 + forest50,
-    ~ wetland1000+ forest1000,
-    ~ wetland50 + forest50 + wetland1000+ forest1000
-  )
-)
-
-models<-lapply(names(lcc),function(n){
-  i<-lcc[[n]]
-  ex<-expand.grid(seq_along(i),seq_along(climate))
-  res<-lapply(1:nrow(ex),function(j){
-    formula(paste(
-      "y ~ -1 + ns(jul,knots=knots)",
-      paste(paste(all.vars(i[[ex[j,1]]]),collapse=" + "),paste(all.vars(climate[[ex[j,2]]]),collapse= " + "),sep=" + "),
-      paste("offset(lognights) + f(spatial, model=spde)"),
-      sep=" + "
-    ))  
-  })
-  names(res)<-paste(n,1:nrow(ex),sep="_")
-  res
-})
-names(models)<-names(lcc)
-
-
-#### VIFS #################################################
-
-vifs<-lapply(unlist(models),function(i){
-  v<-all.vars(i)
-  v<-v[!v%in%c("y","knots","intercept","lognights","spatial","spde")]
-  f<-formula(paste("VEX_Aedes_vexans~jul+",paste(v,collapse="+")))
-  mod<-lm(f,data=ds@data[ds@data$db!="map",])
-  #print(i)
-  vif(mod)  
-})
-vifs[sapply(vifs,function(i){any(i>3)})]
-
-
-
 #### Model formula ########################################
 #model <- y ~ -1 + intercept + jul + julsquare + forest50 + urban50 + urban1000 + agriculture1000  + tmax7 + tmax2 + prcp30 + f(spatial, model=spde, group=spatial.group,control.group=list(model='ar1', hyper=h.spec))
 
 # using knots allow to fix the values for each jul across newdata
-knots<-seq(min(xs$jul)+0.5,max(xs$jul)-0.5,length.out=7)
+knots<-seq(min(xs$jul)+0.5,max(xs$jul)-0.5,length.out=9)
 
 model<-models[["VEX"]][[21]]
 #model<- y ~ -1 + ns(jul,knots=knots) + urban50 + forest50 + urban1000 + forest1000 + anom2 + prcp2 + anom90 + prcp90 + offset(lognights) + f(spatial, model = spde, group = spatial.group, control.group = list(model = "ar1",hyper = h.spec))
@@ -1199,7 +1208,7 @@ model<-models[["VEX"]][[21]]
 v<-setdiff(all.vars(model),c("y","spatial","intercept","spde","year","knots","lognights")) 
 
 #### Priors on fixed effects ##############################
-vals<-list(intercept=1/35^2,default=1/30^2) #5-30
+vals<-list(intercept=1/35^2,default=1/35^2) #5-30
 control.fixed<-list(prec=vals,mean=list(intercept=0,default=0),expand.factor.strategy = "inla")
 
 #### Newdata ########################################
@@ -1286,7 +1295,7 @@ m <- inla(model,data=inla.stack.data(stackfull),
           control.fixed=control.fixed,
           control.inla = list(strategy='gaussian',int.strategy = "eb"),
           num.threads="2:2",
-          verbose=TRUE,
+          verbose=FALSE,
           control.compute=list(dic=TRUE,waic=FALSE,cpo=FALSE,config=TRUE),
           #control.mode = list(result = m, restart = TRUE)), # to rerun the model with NA predictions according to https://06373067248184934733.googlegroups.com/attach/2662ebf61b581/sub.R?part=0.1&view=1&vt=ANaJVrHTFUnDqSbj6WTkDo-b_TftcP-dVVwK9SxPo9jmPvDiK58BmG7DpDdb0Ek6xypsqmCSTLDV1rczoY6Acg_Zb0VRPn1w2vRj3vzHYaHT8JMCEihVLbY
           family="nbinomial")#"zeroinflatednbinomial1"
@@ -1336,21 +1345,21 @@ par(mfrow=c(1,1))
 
 
 
-### Spatial field #########################################
+#### Spatial fields #########################################
 
-#### Projection grid #############################################
+#### Projection grid 
 
 stepsize <- 0.5*1/1
 coords<-st_coordinates(st_cast(st_buffer(st_as_sf(xs),10),"MULTIPOINT"))
 nxy <- round(c(diff(range(coords[,1])), diff(range(coords[,2])))/stepsize)
 projgrid <- inla.mesh.projector(mesh, xlim=range(coords[,1]),ylim=range(coords[,2]), dims=nxy,crs=CRS(proj4string(xs)))
 
-#### Extract mean and sd ###############################################
+#### Extract mean and sd 
 vfield<-c("mean","sd")
 field<-list()
 for(i in seq_along(vfield)){
   xmean <- inla.mesh.project(projgrid,m$summary.random$spatial[[vfield[i]]])
-  #### Set NAs ####################################################
+  #### Set NAs 
   b<-gBuffer(gConvexHull(SpatialPoints(domain$loc,p=CRS(proj4string(ds)))),width=0.1,byid=FALSE)
   o <- over(SpatialPoints(projgrid$lattice$loc,p=CRS(proj4string(ds))),b)
   xmean[is.na(o)] <- NA
@@ -1360,7 +1369,7 @@ for(i in seq_along(vfield)){
 }
 names(field)<-vfield
 
-#### Mask ########################################################
+#### Mask 
 xsbuff<-st_coordinates(st_cast(st_buffer(st_as_sf(xs),7),"MULTIPOINT"))[,1:2]
 buf<-concaveman(xsbuff,10)
 buf<-spPolygons(buf,crs=CRS(proj4string(xs)))
@@ -1368,7 +1377,7 @@ buf<-gBuffer(buf,width=1)
 #field<-stack(field)
 r<-mask(field[["mean"]],buf)
 
-#### Plot fields #################################################
+#### Plot fields 
 cols<-colo.scale(seq(range(values(r),na.rm=TRUE)[1],range(values(r),na.rm=TRUE)[2],length.out=200),c("darkblue","dodgerblue","ivory2","tomato2","firebrick4"),center=TRUE)#,"grey20"))
 p.strip<-list(cex=0.65,lines=1,col="black")
 levelplot(r,col.regions=cols,cuts=199,margin=FALSE,par.strip.text=p.strip,par.settings = list(axis.line = list(col = "grey90"),strip.background = list(col = 'transparent'),strip.border = list(col = 'grey90')),scales = list(col = "black")) +
@@ -1378,7 +1387,7 @@ levelplot(r,col.regions=cols,cuts=199,margin=FALSE,par.strip.text=p.strip,par.se
 par(mfrow=c(1,1))
 
 
-### Marginal effects ########################################
+#### Marginal effects ########################################
 
 # page 263 in Zuur
 table(sapply(strsplit(row.names(samples[[1]]$latent),":"),"[",1))
@@ -1411,10 +1420,10 @@ for(k in seq_along(v1)){
   p<-do.call("cbind",p)
   p<-t(apply(p,1,function(i){c(quantile(i,0.0275),mean(i),quantile(i,0.975))}))
   if(nrow(lp[[v1[k]]])==n){
-    vals<-lp[[v1[k]]][,v1[k]]
+    vals<-bscale(lp[[v1[k]]][,v1[k]],v=v1[k])
     #if(v1[k]%in%c("wetland50","wetland1000")){vals<-exp(vals)-0.5}
     plot(vals,p[,2],type="l",ylim=c(0,200),xlab=v1[k],font=2,ylab="",lty=1,yaxt="n",mgp=c(2,0.45,0),tcl=-0.3)
-    points(xs@data[,v1[k]],xs$sp,pch=1,col=gray(0,0.1))
+    points(bscale(xs@data[,v1[k]],v=v1[k]),xs$sp,pch=1,col=gray(0,0.1))
     lines(vals,p[,2],lwd=3,col=gray(0,0.8))
     #lines(vals,p[,1],lty=3)
     #lines(vals,p[,3],lty=3)
@@ -1429,7 +1438,7 @@ for(k in seq_along(v1)){
 mtext(paste("Mosquitos per trap"),outer=TRUE,cex=1.2,side=2,xpd=TRUE,line=2)
 
 
-### Marginal effects with spatial uncertainty ##########################
+#### Marginal effects with spatial uncertainty ##########################
 
 # this section is not that useful because it is a prediction for a given location, hence it includes uncertainty in the spatial field
 
@@ -1439,24 +1448,25 @@ for(i in seq_along(v1)){
   #p[]<-lapply(p,transI)
   dat<-data.frame(lp[[v1[i]]])
   if(nrow(p)==n){
-    plot(dat[[v1[i]]],p[,2],type="l",ylim=c(0,min(c(max(p[,3]),max(xs$sp)))),xlab=v1[i],font=2,ylab="",lty=1,yaxt="n",mgp=c(2,0.45,0),tcl=-0.3)
+    vals<-bscale(dat[[v1[i]]],v=v1[i])
+    plot(vals,p[,2],type="l",ylim=c(0,min(c(max(p[,3]),max(xs$sp)))),xlab=v1[i],font=2,ylab="",lty=1,yaxt="n",mgp=c(2,0.45,0),tcl=-0.3)
     #plot(dat[[v1[i]]],p[,2],type="l",ylim=c(0,300),xlab=v1[i],font=2,ylab="",lty=1,yaxt="n",mgp=c(2,0.45,0),tcl=-0.3)
-    vals<-dat[[v1[i]]]
-    lines(dat[[v1[i]]],p[,1],lty=3,lwd=1)
-    lines(dat[[v1[i]]],p[,3],lty=3,lwd=1)
-    points(xs@data[,v1[i]],xs$sp,pch=16,col=gray(0,0.07))
+    
+    lines(vals,p[,1],lty=3,lwd=1)
+    lines(vals,p[,3],lty=3,lwd=1)
+    points(bscale(xs@data[,v1[i]],v=v1[i]),xs$sp,pch=16,col=gray(0,0.07))
     polygon(c(vals,rev(vals),vals[1]),c(p[,1],rev(p[,3]),p[,1][1]),col=alpha("black",0.1),border=NA)
   }else{
     #plot(unique(sort(size[,v1[i]])),p[,2],type="l",ylim=c(0,100),xlab=v1[i],font=2,ylab="",lty=1,yaxt="n")
-    segments(x0=as.integer(unique(sort(size[,v[i]]))),x1=as.integer(unique(sort(size[,v[i]]))),y0=p[,1],y1=p[,3],lty=3,lwd=2)
-    points(jitter(as.integer(size[,v[i]]),fac=2),transI(size$tTotal),pch=16,col=gray(0,0.07))
+    #segments(x0=as.integer(unique(sort(size[,v[i]]))),x1=as.integer(unique(sort(size[,v[i]]))),y0=p[,1],y1=p[,3],lty=3,lwd=2)
+    #points(jitter(as.integer(size[,v[i]]),fac=2),transI(size$tTotal),pch=16,col=gray(0,0.07))
   }
   axis(2,las=2)
 }
 mtext("Weekly number of mosquitos",outer=TRUE,cex=1.2,side=2,xpd=TRUE,line=2)
 
 
-### Map predictions ####################################
+#### Map predictions ####################################
 
 # The code for the graph below really sucks... should make it better...
 
@@ -1536,6 +1546,9 @@ lapply(names(pred)[c(1,2,5,4,3,6)],function(i){
   #plot(mappingzone,add=TRUE)
   #plot(mesh,add=TRUE)
   mtext(side=3,line=-3,text=i,adj=0.05,font=2,cex=2)
+  if(i %in% names(meansd)){
+    plot(xs,add=TRUE,cex=0.5,pch=3,lwd=1,col=gray(0.2,1))
+  }
   if(any(obs<1)){
     vobs<-frange(identity(obs[obs>0]),n=7)
     vcex<-c(1,scales::rescale(c(vobs),to=cexminmax))
@@ -1555,7 +1568,7 @@ lapply(names(pred)[c(1,2,5,4,3,6)],function(i){
 })
 
 
-### Map predictions with posteriors samples #############################
+#### Map predictions with posteriors samples #############################
 
 # not done yet and not general enough
 # this is mostly to make sure that the posterior sample approach gives the same results as the NA approach in the map stack
@@ -1606,7 +1619,7 @@ plot(pred[[1]])
 plot(pr)
 
 
-### Map predictions across season #############################
+#### Map predictions across season #############################
 
 # not done yet and not general enough
 
@@ -1672,7 +1685,7 @@ lpr<-lapply(lpr,rast)
 #par(mfrow=c(1,2))
 #plot(pred[[1]])
 
-jul<-round(days*sdjul+meanjul,0)
+jul<-round(days*vscale[["jul"]]["sd"]+vscale[["jul"]]["mean"],0)
 datelim<-range(as.Date(format(as.Date(jul,origin=paste0(yearpred,"-01-01")),"%Y-%m-%d")))+c(-5,5)
 
 zlim1<-range(sapply(lpr,function(i){range(values(i),na.rm=TRUE)}))
@@ -1681,7 +1694,7 @@ zlim<-c(zlim1[1],zlim2[2])
 
 img <- image_graph(1500, 1000, res = 150)
 lapply(seq_along(lpr),function(i){
-  j<-round(days[i]*sdjul+meanjul,0)
+  j<-round(days[i]*vscale[["jul"]]["sd"]+vscale[["jul"]]["mean"],0)
   xdate<-as.Date(format(as.Date(j,origin=paste0(yearpred,"-01-01")),"%Y-%m-%d"))
   gw<-layout(matrix(c(1,rep(2,20)),ncol=1))
   par(mar=c(1,0,0,3),oma=c(0,0,0,5))
@@ -1742,20 +1755,20 @@ image_write(animation,file.path("C:/Users/God/Downloads",paste0(paste0(spcode,ye
 
 
 
-### Model checks ##############################################
+#### Model checks ##############################################
 
 # make sure this is the right way to do it and check if paramete rs are ok. I'm sampling from the sampled hyperpar for each sims, but this is hacky and not correctly jointly sampled
 
 # figure out if the predicted response used already includes the zero-inflation part. If so, the simulation of observations below is likely wrong. If not, meaning the predictor is the nbinom mean before zero-inflation, then the simulated value are probably ok.
 
-#### Simulated ###############################################
+#### Simulated
 prob<-m$summary.fitted.values[index[["est"]],"mean"]
 matprob<-apply(s.eff,2,function(i){
   #rbinom(length(i),size=1,prob=1-sample(zeroprob,1))*rnbinom(n=length(i),mu=exp(i),size=sample(nbsize,1))
   1*rnbinom(n=length(i),mu=exp(i),size=sample(nbsize,1)) # no zeroinflation
 })
 
-#### DHARMa plots ############################################
+##### DHARMa plots
 o<-createDHARMa(simulatedResponse=matprob,observedResponse=xs$sp,fittedPredictedResponse=prob,integerResponse=TRUE)
 par(mfrow=c(2,2))
 plotQQunif(o)
@@ -1764,7 +1777,7 @@ testZeroInflation(o)
 testDispersion(o)
 #hist(o$scaledResiduals)
 
-#### Histograms ###############################################
+##### Histograms 
 par(mfrow=c(1,1))
 brks<-unique(c(seq(0,100,by=5),seq(100,200,by=10),seq(200,max(matprob)*1.05,by=25)))
 h1<-hist(matprob,breaks=brks,xlim=c(0,1000),freq=FALSE,border=NA)
@@ -1773,7 +1786,7 @@ par(new=TRUE,lwd=3)
 h2<-hist(xs$sp,breaks=brks,xlim=c(0,1000),freq=FALSE,col=NA,border=alpha("darkred",0.5),lwd=3,ylim=range(ylim))
 par(lwd=1)
 
-#### Plot simulated and observed ##############################
+##### Plot simulated and observed 
 plot(0,0,xlim=c(0,1000),ylim=c(0,max(h1$density)*1.07),type="n")
 invisible(lapply(1:ncol(matprob[,1:100]),function(i){
   h<-hist(matprob[,i],breaks=brks,xlim=c(0,1000),freq=FALSE,plot=FALSE)
@@ -1781,13 +1794,13 @@ invisible(lapply(1:ncol(matprob[,1:100]),function(i){
 }))
 points(h2$mids,h2$density,pch=16,cex=1.25,col=alpha("red",0.7))
 
-### Explanatory/Predictive power #############################
+#### Explanatory/Predictive power #############################
 
 plot(m$summary.fitted.values[index[["est"]],1],xs$sp,asp=1)
 cor(m$summary.fitted.values[index[["est"]],1],xs$sp)^2
 
 
-### SPDE posteriors ##########################################
+#### SPDE posteriors ##########################################
 
 res <- inla.spde.result(m, "spatial", spde)
 par(mfrow=c(2,1))
@@ -1874,10 +1887,10 @@ dat<-xs@data[xs$db!="map",]
 dat$we<-log(dat$wetland1000+0.001)
 
 
-mm<-glmmTMB(sp ~ ns(jul,df=9) + ns(wetland50,df=9) + ns(wetland1000,df=9) + ns(forest50,df=9) + ns(forest1000,df=9) + anom2 + prcp2 + anom30 + prcp30 + offset(lognights), ziformula=~0, data=dat,family=nbinom2())
+mm<-glmmTMB(sp ~ -1 + ns(jul, df=9) + agriculture50 + forest50 + agriculture1000 + forest1000 + anom2 + prcp2 + anom90 + prcp90 + offset(lognights), ziformula=~0, data=dat,family=nbinom2())
 
 vs<-all.vars(formula(mm))[-1]
-gl<-lapply(vs[2:5],function(i){
+gl<-lapply(vs,function(i){
   g<-ggeffect(mm,terms=paste(i,"[n=100]"))
   plot(g,add=TRUE,jitter=FALSE)+coord_cartesian(ylim = c(0, 500)) 
 })
