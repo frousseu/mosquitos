@@ -545,7 +545,7 @@ plot(ds,add=TRUE,pch=1)
 # this allows to make the lcc/daymet extractions in a single step
 # and INLA does predictions for NA response values
 
-pgrid<-raster(ext=extent(mappingzone),res=c(0.5,0.5),crs=CRS(proj4string(mappingzone)))
+pgrid<-raster(ext=extent(mappingzone),res=c(1,1),crs=CRS(proj4string(mappingzone)))
 pgrid<-setValues(pgrid,1)
 g<-xyFromCell(pgrid,1:ncell(pgrid),spatial=TRUE)
 plot(pgrid)
@@ -577,7 +577,7 @@ proj4string(map)<-CRS(proj4string(ds))
 
 # subset predictions only for a given week (reduces extractions times/memory use)
 #map<-map[substr(map$week,6,8)%in%"W32",]
-map<-map[map$week%in%"2005_W32",]
+map<-map[map$week%in%"2003_W32",]
 
 # id region in case of spatial validation
 map$region<-st_join(st_as_sf(map),reg,join=st_intersects)$region
@@ -859,7 +859,7 @@ plot(ds[ds$db=="map",],pch=21,cex=0.5,col=NA,bg=gray(scales::rescale(ds$urban100
 
 
 ### save the loaded data in a session
-#save.image("mosquitos.RData")
+#save.image("mosquitos2.RData")
 
 ## Correlations ###############################################
 
@@ -955,9 +955,9 @@ lcc<-list(
     ~ urban50 + forest50 + urban1000+ forest1000
   ),
   CQP=list(
-    ~ wetland50 + forest50,
-    ~ wetland1000+ forest1000,
-    ~ wetland50 + forest50 + wetland1000+ forest1000
+    ~ agriculture50 + forest50,
+    ~ agriculture1000+ forest1000,
+    ~ agriculture50 + forest50 + agriculture1000+ forest1000
   ),
   STM=list(
     ~ wetland50 + forest50,
@@ -1069,6 +1069,7 @@ if(TRUE){
   xs2map<-xs2map[predmap,]
   plot(st_geometry(xs2map),add=TRUE)
   
+  #set.seed(1234)
   xs3pts<-as(st_sample(predmap,3000),"Spatial")
   xs2pts<-as(st_cast(predmap,"MULTIPOINT"),"Spatial")
   xs2<-as(xs2,"Spatial")
@@ -1087,8 +1088,10 @@ edge<-2
 #mesh<-inla.mesh.2d(loc.domain=coordinates(ds),max.edge=c(edge,3*edge),offset=c(edge,1*edge),cutoff=edge,boundary=domain,crs=CRS(proj4string(xs)))
 #domain <- inla.nonconvex.hull(coordinates(xs2pts),convex = -0.15, concave = 0.5, resolution = c(340,340))
 domain <- inla.nonconvex.hull(rbind(coordinates(xs2pts),coordinates(xs3pts)),convex = -0.05)
+#domain <- inla.nonconvex.hull(rbind(coordinates(xs2pts)),convex = -0.12)
 #ims<-inla.mesh.segment(loc=coordinates(xs2pts))
 mesh<-inla.mesh.2d(loc.domain=NULL,max.edge=c(edge,3*edge),offset=c(edge,3*edge),cutoff=edge,boundary=domain,crs=CRS(proj4string(xs)))
+#mesh<-inla.mesh.2d(loc=coordinates(xs),max.edge=c(2,8),cutoff=2)
 #mesh<-inla.mesh.2d(boundary=domain,max.edge=c(edge,2*edge),offset=NULL,cutoff=0.5*edge,crs=CRS(proj4string(xs)))
 plot(mesh,asp=1)
 plot(Q,col="grey90",border="white",add=TRUE,lwd=2)
@@ -1106,7 +1109,7 @@ xs<-xs[xs$db!="map",]
 spde <- inla.spde2.pcmatern(
   mesh=mesh, alpha=2, ### mesh and smoothness parameter
   constr = FALSE, # not exactly sure what this does
-  prior.range=c(5, 0.01), ### P(practic.range<0.05)=0.01
+  prior.range=c(10, 0.01), ### P(practic.range<0.05)=0.01
   prior.sigma=c(0.5,0.01)) ### P(sigma>1)=0.01
 
 #### Priors on hyperpar ##################################
@@ -1172,9 +1175,10 @@ inla.pc.dgamma(x, lambda = 1, log = FALSE)
 #model <- y ~ -1 + intercept + jul + julsquare + forest50 + urban50 + urban1000 + agriculture1000  + tmax7 + tmax2 + prcp30 + f(spatial, model=spde, group=spatial.group,control.group=list(model='ar1', hyper=h.spec))
 
 # using knots allow to fix the values for each jul across newdata
-knots<-seq(min(xs$jul)+0.5,max(xs$jul)-0.5,length.out=9)
+knots<-seq(min(xs$jul)+0.5,max(xs$jul)-0.5,length.out=7)
 
 model<-models[["VEX"]][[21]]
+#model<- y ~ -1 + ns(jul, knots = knots) + offset(lognights) + f(spatial, model = spde)
 #model<- y ~ -1 + ns(jul,knots=knots) + urban50 + forest50 + urban1000 + forest1000 + anom2 + prcp2 + anom90 + prcp90 + offset(lognights) + f(spatial, model = spde, group = spatial.group, control.group = list(model = "ar1",hyper = h.spec))
 
 #model <- y ~ -1 + ns(jul,knots=knots) + urban50 + urban1000+ forest50 + forest1000 + anom2 + prcp2 + anom30 + prcp30 + offset(lognights) + f(spatial, model=spde, group=spatial.group,control.group=list(model='ar1', hyper=h.spec))
@@ -1280,7 +1284,7 @@ m <- inla(model,data=inla.stack.data(stackfull),
           #control.family=list(hyper=list(theta=prec.prior)), 
           control.fixed=control.fixed,
           control.inla = list(strategy='gaussian',int.strategy = "eb"),
-          num.threads="2:2",
+          num.threads="1:1",
           verbose=FALSE,
           control.compute=list(dic=TRUE,waic=FALSE,cpo=FALSE,config=TRUE),
           #control.mode = list(result = m, restart = TRUE)), # to rerun the model with NA predictions according to https://06373067248184934733.googlegroups.com/attach/2662ebf61b581/sub.R?part=0.1&view=1&vt=ANaJVrHTFUnDqSbj6WTkDo-b_TftcP-dVVwK9SxPo9jmPvDiK58BmG7DpDdb0Ek6xypsqmCSTLDV1rczoY6Acg_Zb0VRPn1w2vRj3vzHYaHT8JMCEihVLbY
@@ -1291,7 +1295,7 @@ m <- inla(model,data=inla.stack.data(stackfull),
 
 # from haakon bakk a, BTopic112
 nsims<-500
-samples<-inla.posterior.sample(nsims,m,num.threads="2:2")
+samples<-inla.posterior.sample(nsims,m,num.threads="1:1")
 m$misc$configs$contents
 contents<-m$misc$configs$contents
 effect<-"APredictor" # not sure if should use APredictor or Predictor
@@ -1438,8 +1442,8 @@ for(i in seq_along(v1)){
     vals<-bscale(dat[[v1[i]]],v=v1[i])
     plot(vals,p[,2],type="l",ylim=c(0,min(c(max(p[,3]),max(xs$sp)))),xlab=v1[i],font=2,ylab="",lty=1,yaxt="n",mgp=c(2,0.45,0),tcl=-0.3)
     #plot(dat[[v1[i]]],p[,2],type="l",ylim=c(0,300),xlab=v1[i],font=2,ylab="",lty=1,yaxt="n",mgp=c(2,0.45,0),tcl=-0.3)
-    lines(vals,p[,1],lty=3,lwd=1)
-    lines(vals,p[,3],lty=3,lwd=1)
+    #lines(vals,p[,1],lty=3,lwd=1)
+    #lines(vals,p[,3],lty=3,lwd=1)
     points(bscale(xs@data[,v1[i]],v=v1[i]),xs$sp,pch=16,col=gray(0,0.07))
     polygon(c(vals,rev(vals),vals[1]),c(p[,1],rev(p[,3]),p[,1][1]),col=alpha("black",0.1),border=NA)
   }else{
@@ -1459,12 +1463,13 @@ mtext("Weekly number of mosquitos",outer=TRUE,cex=1.2,side=2,xpd=TRUE,line=2)
 frange<-function(x,n=10){seq(min(x,na.rm=TRUE),max(x,na.rm=TRUE),length.out=n)}
 
 quantities<-c("mean","X0.025quant","X0.975quant","sd")
-xsmappred<-cbind(xsmap[,"id"],data.frame(m$summary.fitted.values[index.map,gsub("X","",quantities)]))
+xsmappred<-cbind(xsmap[,"id"],data.frame(m$summary.linear.predictor[index.map,gsub("X","",quantities)]))
 pred<-lapply(seq_along(quantities),function(i){
   rasterize(xsmappred,pgrid,field=quantities[i])
 })
 pred<-stack(pred)
 names(pred)<-quantities
+pred<-exp(pred) # transform back to counts after all calculations
 
 #cw<-unique(xsmap$temporal) # watch out if there is more than one week predicted
 #mcw<-match(paste0("X",cw),names(field[["mean"]]))
@@ -1472,8 +1477,7 @@ meansd<-stack(field)
 meansd<-resample(meansd,pred[[1]])
 names(meansd)<-c("mean.spatial.field","sd.spatial.field")
 pred<-stack(pred,meansd)
-
-pred<-disaggregate(pred,fact=5,method="bilinear") # hack to make the map smoother
+#pred<-disaggregate(pred,fact=5,method="bilinear") # hack to make the map smoother
 
 ### use tighter mapping zone instead of mappingzone
 xsbuff<-st_coordinates(st_cast(st_buffer(st_as_sf(xs),7),"MULTIPOINT"))[,1:2]
@@ -1572,11 +1576,12 @@ Amapmatrix<-as.matrix(Amap)
 #for(k in seq_along(v1)){
 p<-lapply(1:nsims,function(i){
   dat<-xsmap@data
-  juls<-lp[["jul"]][which.min(abs(lp[["jul"]]$jul-dat$jul[1])),,drop=FALSE]
+  juls<-lp[["jul"]][which.min(abs(lp[["jul"]]$jul-dat$jul[1])),,drop=FALSE] # finds the closest jul value to get the corresponding sline basis
   dat<-cbind(dat,juls[,names(juls)%in%paste0("X",1:50)][rep(1,nrow(dat)),])
   betas<-samples[[i]]$latent[nparams]
   names(betas)<-ifelse(names(nparams)%in%1:50,paste0("X",names(nparams)),names(nparams))
-  fixed<-as.matrix(dat[,names(betas)]) %*% betas # make sure betas and vars are in the same order
+  dat<-dat[,names(betas)]
+  fixed<-as.matrix(dat) %*% betas # make sure betas and vars are in the same order
   # this if we want a spatial part
   wk<-samples[[i]]$latent[nweights]
   #if(is.factor(xs@data[,v[k]])){ # factors never in model (et)
@@ -1591,20 +1596,28 @@ p<-lapply(1:nsims,function(i){
   p
 })
 p<-do.call("cbind",p)
-p<-t(apply(p,1,function(i){c(quantile(i,0.0275),mean(i),quantile(i,0.975))}))
-p<-exp(p)
+p<-t(apply(p,1,function(i){c(quantile(i,0.0275,na.rm=TRUE),mean(i),quantile(i,0.975,na.rm=TRUE))}))
+#p<-exp(p)
 
 xsmap$preds<-p[,2]
 
 pr<-rasterize(xsmap,pgrid,field="preds",fun=mean)
 pr<-mask(pr,buf)
+pr<-exp(pr)
 #pr<-disaggregate(pr,fact=2,method="bilinear")
 
 par(mfrow=c(1,2),oma=c(0,0,0,4))
-plot(pred[[1]])
+f<-function(i){log(i)}
+zlim<-range(f(c(values(pred[[1]]),values(pr))),na.rm=TRUE)
+zlim<-range(f(c(values(pr))),na.rm=TRUE)
+xxs<-xs[xs$week%in%xsmap$week[1],]
+plot(f(pred[[1]]),zlim=zlim)
+plot(st_geometry(water),border=NA,col="white",add=TRUE)
+plot(xxs,add=TRUE,pch=1,cex=scales::rescale(xxs$sp,c(0.5,10)))
 #plot(resample(pred[[1]],pr))
-plot(pr)
-
+plot(f(pr),zlim=zlim)
+plot(st_geometry(water),border=NA,col="white",add=TRUE)
+plot(xxs,add=TRUE,pch=1,cex=scales::rescale(xxs$sp,c(0.5,10)))
 
 #### Map predictions across season #############################
 
@@ -1630,7 +1643,7 @@ Amapmatrix<-as.matrix(Amapp)
 #par(mfrow=n2mfrow(length(v1),asp=3.5/2),mar=c(3,2,1,1),oma=c(0,10,0,0))
 #for(k in seq_along(v1)){
 
-days<-seq(min(xs$jul[xs$year==yearpred]),max(xs$jul[xs$year==yearpred]),length.out=20)
+days<-seq(min(xs$jul[xs$year==yearpred]),max(xs$jul[xs$year==yearpred]),length.out=10)
 lpr<-foreach(j=seq_along(days),.packages=c("raster")) %do% {
   juls<-lp[["jul"]][which.min(abs(lp[["jul"]]$jul-days[j])),,drop=FALSE]
   standardv<-names(nparams)[!names(nparams)%in%c("intercept","jul","julsquare",1:50)]
@@ -1892,4 +1905,56 @@ p<-predict(mm,newdata=nd,type="response")
 plot(exp(nd$we),p)
 
 
+### The following id for checking the stability of results
 
+par(mfrow=c(1,2),oma=c(0,0,0,4))
+f<-function(i){log(i)}
+zlim<-range(f(c(values(pred[[1]]),values(pr))),na.rm=TRUE)
+zlim<-range(f(c(values(pr))),na.rm=TRUE)
+xxs<-xs[xs$week%in%xsmap$week[1],]
+plot(f(pred[[1]]),zlim=zlim)
+plot(st_geometry(water),border=NA,col="white",add=TRUE)
+plot(xxs,add=TRUE,pch=1,cex=scales::rescale(xxs$sp,c(0.5,10)))
+#plot(resample(pred[[1]],pr))
+plot(f(pr),zlim=zlim)
+plot(st_geometry(water),border=NA,col="white",add=TRUE)
+plot(xxs,add=TRUE,pch=1,cex=scales::rescale(xxs$sp,c(0.5,10)))
+
+#preds<-list()
+preds[[length(preds)+1]]<-pred[[1]]
+
+m<-readRDS("C:/Users/God/Downloads/m.rds")
+load("C:/Users/God/Downloads/results.RData")
+lf<-list.files("C:/Users/God/Downloads",pattern=".rds",full=TRUE)
+lf<-sort(lf[grep("pred",lf)])
+preds<-lapply(lf,function(i){
+  readRDS(i)[[5]]
+})
+
+
+#pred<-readRDS("C:/Users/God/Documents/mosquitos/data/pred.rds")
+#preds<-pred[[1]]
+
+#pmesh<-inla.mesh2sp(mesh)$triangles
+spreds<-stack(preds)
+spreds<-disaggregate(spreds,fact=5,method="bilinear")
+#spreds<-log(spreds)
+#spreds[spreds>600]<-NA
+par(mar=c(0,0,0,0),oma=c(1,1,1,2),mfrow=n2mfrow(nlayers(spreds),asp=2))
+lapply(1:nlayers(spreds),function(i){
+  plot(spreds[[i]],zlim=range(values(spreds),na.rm=TRUE),axes=FALSE,col=cols)
+  plot(st_geometry(water),border=NA,col="white",add=TRUE)
+  #plot(xs,add=TRUE,pch=1,cex=scales::rescale(xs$sp,c(0.5,10)))
+})
+par(mfrow=c(1,1))
+
+
+par(mar=c(0,0,0,0),oma=c(1,1,1,2))
+plot(spreds[[nlayers(spreds)]],zlim=range(values(spreds),na.rm=TRUE))
+plot(pmesh,col=NA,border=gray(1),lwd=1,add=TRUE)
+
+# scp C:/Users/God/Documents/mosquitos/models.R root@do:/root
+
+# nohup Rscript models.R --no-save > verbose.out 2>&1 &
+
+# top -o %MEM
