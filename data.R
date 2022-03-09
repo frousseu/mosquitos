@@ -53,7 +53,7 @@ Sys.setlocale("LC_ALL","English")
 # all files should be in this folder
 path<-"C:/Users/God/Documents/mosquitos/data"
 setwd(path)
-load("data.RData")
+#load("data.RData")
 
 
 ### useful functions for plotting and predictions
@@ -366,6 +366,10 @@ ds<-ds[!is.na(o),]
 
 
 #### Remove weeks with few traps #################################
+
+# summary of most abundant species per year
+d[,lapply(.SD,sum,na.rm=TRUE),by=year,.SD=species][order(year),][,1:6]
+
 # currently ignored, better to do this before running the models when subsetting
 d[,nbtrapweek:=.N,by=.(week)]
 k<-d$nbtrapweek>=0
@@ -772,4 +776,4 @@ v[apply(v,1,function(i){any(i[-1]>3)}),]
 
 vif(lm(VEX_Aedes_vexans~urban1000+forest1000+agriculture1000,data=ds@data[ds@data$db!="map",]))
 
-#save("data.RData")
+#save.image("data.RData")

@@ -1,4 +1,19 @@
-## RESULTS ################################################
+
+## RESULTS ##################################################
+
+load("model_selection.RData")
+load("model_outputs.RData")
+
+#### DIC ####################################################
+
+o<-order(dics)
+delta_dics<-dics[o]-min(dics)
+mods<-sapply(spmodels,function(i){
+  av<-all.vars(i)
+  paste(av[!av%in%c("y","jul","knots","lognights","spatial","spde")],collapse=" + ")
+})[o]
+data.frame(mods,delta_dics)
+
 
 #### Show posteriors ########################################
 
@@ -70,12 +85,14 @@ nparams<-sapply(params,function(i){
 #table(sapply(strsplit(row.names(samples[[1]]$latent),":"),"[",1))
 nweights<-grep("spatial",row.names(samples[[1]]$latent))
 
-par(mfrow=n2mfrow(length(v1),asp=3.5/2),mar=c(3,2,1,1),oma=c(0,10,0,0))
-for(k in seq_along(v1)){
+v1m<-c("jul",v1[v1%in%row.names(m$summary.fixed)])
+
+par(mfrow=n2mfrow(length(v1m),asp=3.5/2),mar=c(3,2,1,1),oma=c(0,10,0,0))
+for(k in seq_along(v1m)){
   p<-lapply(1:nsims,function(i){
     betas<-samples[[i]]$latent[nparams]
     names(betas)<-ifelse(names(nparams)%in%1:50,paste0("X",names(nparams)),names(nparams))
-    fixed<-as.matrix(lp[[v1[k]]][,names(betas)]) %*% betas # make sure betas and vars are in the same order
+    fixed<-as.matrix(lp[[v1m[k]]][,names(betas)]) %*% betas # make sure betas and vars are in the same order
     # this if we want a spatial part
     wk<-samples[[i]]$latent[nweights]
     #if(is.factor(xs@data[,v[k]])){ # factors never in model (et)
@@ -90,11 +107,11 @@ for(k in seq_along(v1)){
   p<-do.call("cbind",p)
   p<-t(apply(p,1,function(i){c(quantile(i,0.0275),mean(i),quantile(i,0.975))}))
   p<-exp(p)
-  if(nrow(lp[[v1[k]]])==n){
-    vals<-bscale(lp[[v1[k]]][,v1[k]],v=v1[k])
-    #if(v1[k]%in%c("wetland50","wetland1000")){vals<-exp(vals)-0.5}
-    plot(vals,p[,2],type="l",ylim=c(0,min(c(max(p[,3]),max(xs$sp))))*1.3,xlab=v1[k],font=2,ylab="",lty=1,yaxt="n",mgp=c(2,0.45,0),tcl=-0.3)
-    points(bscale(xs@data[,v1[k]],v=v1[k]),xs$sp,pch=1,col=gray(0,0.1))
+  if(nrow(lp[[v1m[k]]])==n){
+    vals<-bscale(lp[[v1m[k]]][,v1m[k]],v=v1m[k])
+    #if(v1m[k]%in%c("wetland50","wetland1000")){vals<-exp(vals)-0.5}
+    plot(vals,p[,2],type="l",ylim=c(0,min(c(max(p[,3]),max(xs$sp))))*1.3,xlab=v1m[k],font=2,ylab="",lty=1,yaxt="n",mgp=c(2,0.45,0),tcl=-0.3)
+    points(bscale(xs@data[,v1m[k]],v=v1m[k]),xs$sp,pch=1,col=gray(0,0.1))
     lines(vals,p[,2],lwd=3,col=gray(0,0.8))
     #lines(vals,p[,1],lty=3)
     #lines(vals,p[,3],lty=3)
@@ -113,21 +130,21 @@ mtext(paste("Mosquitos per trap"),outer=TRUE,cex=1.2,side=2,xpd=TRUE,line=2)
 
 # this section is not that useful because it is a prediction for a given location, hence it includes uncertainty in the spatial field
 
-par(mfrow=n2mfrow(length(v1),asp=1.5),mar=c(3,3,1,1),oma=c(0,10,0,0))
-for(i in seq_along(v1)){
-  p<-m$summary.fitted.values[index[[v1[i]]],c("0.025quant","0.5quant","0.975quant")]
+par(mfrow=n2mfrow(length(v1m),asp=1.5),mar=c(3,3,1,1),oma=c(0,10,0,0))
+for(i in seq_along(v1m)){
+  p<-m$summary.fitted.values[index[[v1m[i]]],c("0.025quant","0.5quant","0.975quant")]
   #p[]<-lapply(p,transI)
-  dat<-data.frame(lp[[v1[i]]])
+  dat<-data.frame(lp[[v1m[i]]])
   if(nrow(p)==n){
-    vals<-bscale(dat[[v1[i]]],v=v1[i])
-    plot(vals,p[,2],type="l",ylim=c(0,min(c(max(p[,3]),max(xs$sp)))),xlab=v1[i],font=2,ylab="",lty=1,yaxt="n",mgp=c(2,0.45,0),tcl=-0.3)
-    #plot(dat[[v1[i]]],p[,2],type="l",ylim=c(0,300),xlab=v1[i],font=2,ylab="",lty=1,yaxt="n",mgp=c(2,0.45,0),tcl=-0.3)
+    vals<-bscale(dat[[v1m[i]]],v=v1m[i])
+    plot(vals,p[,2],type="l",ylim=c(0,min(c(max(p[,3]),max(xs$sp)))),xlab=v1m[i],font=2,ylab="",lty=1,yaxt="n",mgp=c(2,0.45,0),tcl=-0.3)
+    #plot(dat[[v1m[i]]],p[,2],type="l",ylim=c(0,300),xlab=v1m[i],font=2,ylab="",lty=1,yaxt="n",mgp=c(2,0.45,0),tcl=-0.3)
     #lines(vals,p[,1],lty=3,lwd=1)
     #lines(vals,p[,3],lty=3,lwd=1)
-    points(bscale(xs@data[,v1[i]],v=v1[i]),xs$sp,pch=16,col=gray(0,0.07))
+    points(bscale(xs@data[,v1m[i]],v=v1m[i]),xs$sp,pch=16,col=gray(0,0.07))
     polygon(c(vals,rev(vals),vals[1]),c(p[,1],rev(p[,3]),p[,1][1]),col=alpha("black",0.1),border=NA)
   }else{
-    #plot(unique(sort(size[,v1[i]])),p[,2],type="l",ylim=c(0,100),xlab=v1[i],font=2,ylab="",lty=1,yaxt="n")
+    #plot(unique(sort(size[,v1m[i]])),p[,2],type="l",ylim=c(0,100),xlab=v1m[i],font=2,ylab="",lty=1,yaxt="n")
     #segments(x0=as.integer(unique(sort(size[,v[i]]))),x1=as.integer(unique(sort(size[,v[i]]))),y0=p[,1],y1=p[,3],lty=3,lwd=2)
     #points(jitter(as.integer(size[,v[i]]),fac=2),transI(size$tTotal),pch=16,col=gray(0,0.07))
   }
@@ -252,8 +269,8 @@ nparams<-sapply(params,function(i){
 nweights<-grep("spatial",row.names(samples[[1]]$latent))
 Amapmatrix<-as.matrix(Amap)
 
-#par(mfrow=n2mfrow(length(v1),asp=3.5/2),mar=c(3,2,1,1),oma=c(0,10,0,0))
-#for(k in seq_along(v1)){
+#par(mfrow=n2mfrow(length(v1m),asp=3.5/2),mar=c(3,2,1,1),oma=c(0,10,0,0))
+#for(k in seq_along(v1m)){
 p<-lapply(1:nsims,function(i){
   dat<-xsmap@data
   juls<-lp[["jul"]][which.min(abs(lp[["jul"]]$jul-dat$jul[1])),,drop=FALSE] # finds the closest jul value to get the corresponding sline basis
@@ -320,8 +337,8 @@ Amapmatrix<-as.matrix(Amapp)
 #a1<-unique(as.vector(as.matrix(Amap3)[,1:212]))
 #a2<-unique(as.vector(as.matrix(Amap3)[,213:424]))
 
-#par(mfrow=n2mfrow(length(v1),asp=3.5/2),mar=c(3,2,1,1),oma=c(0,10,0,0))
-#for(k in seq_along(v1)){
+#par(mfrow=n2mfrow(length(v1m),asp=3.5/2),mar=c(3,2,1,1),oma=c(0,10,0,0))
+#for(k in seq_along(v1m)){
 
 days<-seq(min(xs$jul[xs$year==yearpred]),max(xs$jul[xs$year==yearpred]),length.out=10)
 lpr<-foreach(j=seq_along(days),.packages=c("raster")) %do% {

@@ -1,9 +1,7 @@
+
 ## MODELS #####################################################
 
-#load("mosquitos.RData")
-
-# summary of most abundant species per year
-#d[,lapply(.SD,sum,na.rm=TRUE),by=year,.SD=species][order(year),][,1:6]
+load("data.RData")
 
 #### Model list ##########################################
 
@@ -33,7 +31,7 @@ lcc<-list(
     ~ agriculture1000+ forest1000,
     ~ agriculture50 + forest50 + agriculture1000+ forest1000
   ),
-  STM=list(
+  SMG=list(
     ~ wetland50 + forest50,
     ~ wetland1000+ forest1000,
     ~ wetland50 + forest50 + wetland1000+ forest1000
@@ -75,7 +73,7 @@ cat("\014")
 inla.setOption(inla.mode="experimental")
 year<-c(2003:2016);
 weeks<-10:50
-spcode<-"VEX_"
+spcode<-c("VEX_","CPR_","CQP_","SMG_")[1] # change index to change species
 lweeks<-lapply(year,function(i){list(i,weeks)})
 #lweeks<-list(list(2014,weeks),list(2015,29:32))
 weeks<-apply(do.call("rbind",lapply(lweeks,function(i){expand.grid(year=i[[1]],week=i[[2]])})),1,function(i){paste(i[1],i[2],sep="_W")})
@@ -157,7 +155,7 @@ if(TRUE){
 }
 
 
-edge<-2
+edge<-1
 #domain <- inla.nonconvex.hull(coordinates(ds),convex=-0.015, resolution = c(100, 100))
 #mesh<-inla.mesh.2d(loc.domain=coordinates(ds),max.edge=c(edge,3*edge),offset=c(edge,1*edge),cutoff=edge,boundary=domain,crs=CRS(proj4string(xs)))
 #domain <- inla.nonconvex.hull(coordinates(xs2pts),convex = -0.15, concave = 0.5, resolution = c(340,340))
@@ -249,27 +247,9 @@ inla.pc.dgamma(x, lambda = 1, log = FALSE)
 #model <- y ~ -1 + intercept + jul + julsquare + forest50 + urban50 + urban1000 + agriculture1000  + tmax7 + tmax2 + prcp30 + f(spatial, model=spde, group=spatial.group,control.group=list(model='ar1', hyper=h.spec))
 
 # using knots allow to fix the values for each jul across newdata
-knots<-seq(min(xs$jul)+0.5,max(xs$jul)-0.5,length.out=7)
+knots<-seq(min(xs$jul)+0.25,max(xs$jul)-0.25,length.out=9)
 
-model<-models[["VEX"]][[21]]
-#model<- y ~ -1 + ns(jul, knots = knots) + offset(lognights) + f(spatial, model = spde)
-#model<- y ~ -1 + ns(jul,knots=knots) + urban50 + forest50 + urban1000 + forest1000 + anom2 + prcp2 + anom90 + prcp90 + offset(lognights) + f(spatial, model = spde, group = spatial.group, control.group = list(model = "ar1",hyper = h.spec))
-
-#model <- y ~ -1 + ns(jul,knots=knots) + urban50 + urban1000+ forest50 + forest1000 + anom2 + prcp2 + anom30 + prcp30 + offset(lognights) + f(spatial, model=spde, group=spatial.group,control.group=list(model='ar1', hyper=h.spec))
-#model <- y ~ -1 + intercept + bs(jul) + f(spatial, model=spde, group=spatial.group,control.group=list(model='ar1', hyper=h.spec))
-#model <- y ~ -1 + intercept + jul + julsquare + forest1000 + f(spatial, model=spde, group=spatial.group,control.group=list(model='ar1', hyper=h.spec))
-#model <- y ~ -1 + intercept + jul + julsquare + f(spatial, model=spde, group=spatial.group,control.group=list(model='ar1', hyper=h.spec)) 
-#model <- y ~ -1 + intercept + jul + julsquare + forest100 + urban100 + f(spatial, model=spde, group=spatial.group,control.group=list(model='ar1', hyper=h.spec)) 
-#model <- y ~ -1 + intercept + jul + julsquare + forest + urban + tmax15 + tmax1
-#model <- y ~ -1 + intercept + f(spatial, model=spde, group=spatial.group,control.group=list(model='ar1', hyper=h.spec)) 
-#formulae <- y ~ 0 + w + f(spatial, model=spde) + f(week,model="rw1")
-#formulae <- y ~ 0 + w + f(spatial, model=spde, group=spatial.group,control.group=list(model='exchangeable')) 
-
-
-
-
-
-v<-setdiff(all.vars(model),c("y","spatial","intercept","spde","year","knots","lognights")) 
+v<-setdiff(unique(unlist(lapply(unlist(models),all.vars))),c("y","spatial","intercept","spde","year","knots","lognights")) 
 
 #### Priors on fixed effects ##############################
 vals<-list(intercept=1/35^2,default=1/35^2) #5-30
@@ -347,4 +327,6 @@ for(i in seq_along(v1)){
   index<-c(index,list(inla.stack.index(stackfull,tag=v1[i])$data))
 }  
 names(index)[3:length(index)]<-v1
+
+save.image("model_parameters.RData")
 
