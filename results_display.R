@@ -55,12 +55,14 @@ for(i in seq_along(vfield)){
 names(field)<-vfield
 
 #### Mask 
-xsbuff<-st_coordinates(st_cast(st_buffer(st_as_sf(xs),7),"MULTIPOINT"))[,1:2]
-buf<-concaveman(xsbuff,10)
-buf<-spPolygons(buf,crs=CRS(proj4string(xs)))
-buf<-gBuffer(buf,width=1)
+#xsbuff<-st_coordinates(st_cast(st_buffer(st_as_sf(xs),7),"MULTIPOINT"))[,1:2]
+#buf<-concaveman(xsbuff,10)
+#buf<-spPolygons(buf,crs=CRS(proj4string(xs)))
+#buf<-gBuffer(buf,width=1)
 #field<-stack(field)
-r<-mask(field[["mean"]],buf)
+r<-field[["mean"]]
+r<-mask(r,mappingzone)
+
 
 #### Plot fields 
 cols<-colo.scale(seq(range(values(r),na.rm=TRUE)[1],range(values(r),na.rm=TRUE)[2],length.out=200),c("darkblue","dodgerblue","ivory2","tomato2","firebrick4"),center=TRUE)#,"grey20"))
@@ -177,11 +179,12 @@ pred<-stack(pred,meansd)
 #pred<-disaggregate(pred,fact=5,method="bilinear") # hack to make the map smoother
 
 ### use tighter mapping zone instead of mappingzone
-xsbuff<-st_coordinates(st_cast(st_buffer(st_as_sf(xs),7),"MULTIPOINT"))[,1:2]
-buf<-concaveman(xsbuff,10)
-buf<-spPolygons(buf,crs=CRS(proj4string(xs)))
-buf<-gBuffer(buf,width=1)
-pred<-mask(pred,buf)
+#xsbuff<-st_coordinates(st_cast(st_buffer(st_as_sf(xs),7),"MULTIPOINT"))[,1:2]
+#buf<-concaveman(xsbuff,10)
+#buf<-spPolygons(buf,crs=CRS(proj4string(xs)))
+#buf<-gBuffer(buf,width=1)
+#pred<-mask(pred,buf)
+pred<-mask(pred,mappingzone)
 
 cols<-alpha(colo.scale(200,c("steelblue3","lightgoldenrod","orange","red3","darkred","grey10")),0.80)
 colssd<-rev(cividis(200))
@@ -299,7 +302,7 @@ p<-t(apply(p,1,function(i){c(quantile(i,0.0275,na.rm=TRUE),mean(i),quantile(i,0.
 xsmap$preds<-p[,2]
 
 pr<-rasterize(xsmap,pgrid,field="preds",fun=mean)
-pr<-mask(pr,buf)
+pr<-mask(pr,mappingzone)
 pr<-exp(pr)
 #pr<-disaggregate(pr,fact=2,method="bilinear")
 
@@ -370,7 +373,7 @@ lpr<-foreach(j=seq_along(days),.packages=c("raster")) %do% {
   p<-exp(p)
   xsmap$preds<-p[,2]
   pr<-rasterize(xsmap,pgrid,field="preds",fun=mean)
-  pr<-mask(pr,buf)
+  pr<-mask(pr,mappingzone)
   #pr<-disaggregate(pr,fact=1,method="bilinear")
   print(j)
   pr
