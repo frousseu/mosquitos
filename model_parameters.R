@@ -73,7 +73,7 @@ cat("\014")
 inla.setOption(inla.mode="experimental")
 year<-c(2003:2016);
 weeks<-10:50
-spcode<-c("VEX_","CPR_","CQP_","SMG_")[1] # change index to change species
+spcode<-c("VEX_","CPR_","CQP_","SMG_")[3] # change index to change species
 lweeks<-lapply(year,function(i){list(i,weeks)})
 #lweeks<-list(list(2014,weeks),list(2015,29:32))
 weeks<-apply(do.call("rbind",lapply(lweeks,function(i){expand.grid(year=i[[1]],week=i[[2]])})),1,function(i){paste(i[1],i[2],sep="_W")})
@@ -142,7 +142,8 @@ if(TRUE){
   plot(st_geometry(xs2map),add=TRUE)
   
   #set.seed(1234)
-  xs3pts<-as(st_sample(predmap,3000),"Spatial")
+  #xs3pts<-as(st_sample(predmap,3000),"Spatial")
+  xs3pts<-as(st_sample(st_as_sf(mappingzone),10000),"Spatial")
   xs2pts<-as(st_cast(predmap,"MULTIPOINT"),"Spatial")
   xs2<-as(xs2,"Spatial")
   xs2map<-as(xs2map,"Spatial")
@@ -159,7 +160,7 @@ edge<-1
 #domain <- inla.nonconvex.hull(coordinates(ds),convex=-0.015, resolution = c(100, 100))
 #mesh<-inla.mesh.2d(loc.domain=coordinates(ds),max.edge=c(edge,3*edge),offset=c(edge,1*edge),cutoff=edge,boundary=domain,crs=CRS(proj4string(xs)))
 #domain <- inla.nonconvex.hull(coordinates(xs2pts),convex = -0.15, concave = 0.5, resolution = c(340,340))
-domain <- inla.nonconvex.hull(rbind(coordinates(xs2pts),coordinates(xs3pts)),convex = -0.05)
+domain <- inla.nonconvex.hull(rbind(coordinates(xs2pts),coordinates(xs3pts)),convex = -0.015,resolution=75)
 #domain <- inla.nonconvex.hull(rbind(coordinates(xs2pts)),convex = -0.12)
 #ims<-inla.mesh.segment(loc=coordinates(xs2pts))
 mesh<-inla.mesh.2d(loc.domain=NULL,max.edge=c(edge,3*edge),offset=c(edge,3*edge),cutoff=edge,boundary=domain,crs=CRS(proj4string(xs)))
@@ -169,7 +170,7 @@ plot(mesh,asp=1)
 plot(Q,col="grey90",border="white",add=TRUE,lwd=2)
 plot(mesh,asp=1,add=TRUE)
 plot(xs[!xs$db%in%"map",],add=TRUE,pch=16,col="forestgreen")
-#plot(mappingzone,add=TRUE)
+plot(mappingzone,add=TRUE)
 mtext(side=3,line=-2,text=paste("edge =",edge,"km"),font=2,cex=1.5)
 
 
@@ -181,8 +182,8 @@ xs<-xs[xs$db!="map",]
 spde <- inla.spde2.pcmatern(
   mesh=mesh, alpha=2, ### mesh and smoothness parameter
   constr = FALSE, # not exactly sure what this does
-  prior.range=c(10, 0.01), ### P(practic.range<0.05)=0.01
-  prior.sigma=c(0.5,0.01)) ### P(sigma>1)=0.01
+  prior.range=c(5, 0.1), ### P(practic.range<0.05)=0.01
+  prior.sigma=c(0.5,0.1)) ### P(sigma>1)=0.01
 
 #### Priors on hyperpar ##################################
 #h.spec <- list(theta=list(prior="pc.prec", param=c(0.5,0.5)), rho=list(prior="pc.cor1", param=c(0.9,0.9)))
