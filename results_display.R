@@ -1,4 +1,18 @@
 
+library(RcppArmadillo)
+library(Rcpp)
+library(matrixStats)
+
+
+# for master matrix * vector multiplications when combining posterior samples
+# code stolen from https://stackoverflow.com/questions/51054227/why-is-this-naive-matrix-multiplication-faster-than-base-rs
+arma_code <- 
+  "arma::vec arma_mm(const arma::mat& m, const arma::vec& v) {
+       return m * v;
+   };"
+arma_mm = cppFunction(code = arma_code, depends = "RcppArmadillo")
+
+
 ## RESULTS ##################################################
 
 load("model_selection.RData")
@@ -6,14 +20,17 @@ load("model_outputs.RData")
 
 #### DIC ####################################################
 
-o<-order(dics)
-delta_dics<-dics[o]-min(dics)
-mods<-sapply(spmodels,function(i){
+dics<-c(dics,mfixed$dic$dic)
+delta_dics<-dics-min(dics)
+mods<-sapply(c(spmodels,fixed),function(i){
   av<-all.vars(i)
-  paste(av[!av%in%c("y","jul","knots","lognights","spatial","spde")],collapse=" + ")
-})[o]
-data.frame(mods,delta_dics)
+  paste(av[!av%in%c("y","jul","knots","lognights","spde")],collapse=" + ")
+})
+resdics<-data.frame(mods,delta_dics)
 
+
+resdics<-resdics[order(resdics$delta_dics),]
+resdics
 
 #### Show posteriors ########################################
 
@@ -55,11 +72,6 @@ for(i in seq_along(vfield)){
 names(field)<-vfield
 
 #### Mask 
-#xsbuff<-st_coordinates(st_cast(st_buffer(st_as_sf(xs),7),"MULTIPOINT"))[,1:2]
-#buf<-concaveman(xsbuff,10)
-#buf<-spPolygons(buf,crs=CRS(proj4string(xs)))
-#buf<-gBuffer(buf,width=1)
-#field<-stack(field)
 r<-field[["mean"]]
 r<-mask(r,mappingzone)
 
@@ -211,7 +223,10 @@ lapply(names(pred)[c(1,2,5,4,3,6)],function(i){
   }
   #if(i%in%c("sd","mean")){
   if(i%in%quantities){
-    zlim<-NULL
+    zlim<-NULL # limits specific to graph
+    if(i %in% quantities[1:3] && TRUE){ # limits determined by CI if TRUE
+      zlim<-range(values(pred2[[quantities[1:3]]]),na.rm=TRUE) 
+    }
     axis.args=list(at=frange(values(pred2[[i]])),labels=round(f(frange(values(pred2[[i]]))),0),cex.axis=0.8,lwd=0,tck=-0.2,mgp=c(3,0.3,0),lwd.ticks=1)
     legend.args=list(text='Nb of mosquitos / trap', side=4, font=2, line=-2.5, cex=0.8)
   }else{
@@ -220,9 +235,9 @@ lapply(names(pred)[c(1,2,5,4,3,6)],function(i){
       axis.args=list(at=frange(values(pred2[[i]])),labels=round(f(frange(values(pred2[[i]]))),2),cex.axis=0.8,lwd=0,tck=-0.2,mgp=c(3,0.3,0),lwd.ticks=1)
       legend.args=list(text='Nb of mosquitos / trap', side=4, font=2, line=-2.5, cex=0.8)
     }else{
-      zlim<-range(values(pred2[[quantities[1:3]]]),na.rm=TRUE)
-      axis.args=list(at=c(frange(zlim),range(values(pred2[[i]]),na.rm=TRUE)),labels=round(f(c(frange(zlim),range(values(pred2[[i]]),na.rm=TRUE))),0),cex.axis=0.8,lwd=0,tck=-0.2,mgp=c(3,0.3,0),lwd.ticks=1)
-      legend.args=list(text='Nb of mosquitos / trap', side=4, font=2, line=-2.5, cex=0.8)
+      #zlim<-range(values(pred2[[quantities[1:3]]]),na.rm=TRUE)
+      #axis.args=list(at=c(frange(zlim),range(values(pred2[[i]]),na.rm=TRUE)),labels=round(f(c(frange(zlim),range(values(pred2[[i]]),na.rm=TRUE))),0),cex.axis=0.8,lwd=0,tck=-0.2,mgp=c(3,0.3,0),lwd.ticks=1)
+      #legend.args=list(text='Nb of mosquitos / trap', side=4, font=2, line=-2.5, cex=0.8)
     }
   }
   plot(pred2[[i]],col=col,zlim=zlim,legend.width=2.5, legend.shrink=1,axis.args=axis.args,legend.args=legend.args,axes=FALSE,box=FALSE,tcl=0.2,mgp=c(1.5,0.0,0),cex.axis=0.7)
@@ -274,7 +289,7 @@ Amapmatrix<-as.matrix(Amap)
 
 #par(mfrow=n2mfrow(length(v1m),asp=3.5/2),mar=c(3,2,1,1),oma=c(0,10,0,0))
 #for(k in seq_along(v1m)){
-p<-lapply(1:nsims,function(i){
+p<-lapply((1:nsims)[1:100],function(i){
   dat<-xsmap@data
   juls<-lp[["jul"]][which.min(abs(lp[["jul"]]$jul-dat$jul[1])),,drop=FALSE] # finds the closest jul value to get the corresponding sline basis
   dat<-cbind(dat,juls[,names(juls)%in%paste0("X",1:50)][rep(1,nrow(dat)),])
@@ -287,7 +302,8 @@ p<-lapply(1:nsims,function(i){
   #if(is.factor(xs@data[,v[k]])){ # factors never in model (et)
   #spatial<-as.matrix(inla.spde.make.A(mesh=mesh,loc=matrix(c(0.3,0.5),ncol=2)[rep(1,nlevels(size[,v[k]])),,drop=FALSE])) %*% wk
   #}else{
-  spatial<-Amapmatrix %*% wk
+  #spatial<-Amapmatrix %*% wk
+  spatial<-arma_mm(Amapmatrix,wk) # ~ 3 times faster than %*%
   #}
   p<-fixed+spatial
   #p<-fixed # ignores spatial part
@@ -296,7 +312,8 @@ p<-lapply(1:nsims,function(i){
   p
 })
 p<-do.call("cbind",p)
-p<-t(apply(p,1,function(i){c(quantile(i,0.0275,na.rm=TRUE),mean(i),quantile(i,0.975,na.rm=TRUE))}))
+#p<-t(apply(p,1,function(i){c(quantile(i,0.0275,na.rm=TRUE),mean(i),quantile(i,0.975,na.rm=TRUE))}))
+p<-cbind(rowQuantiles(p,probs=c(0.0275,0.975),na.rm=TRUE),rowMeans(p,na.rm=TRUE))[,c(1,3,2)]
 #p<-exp(p)
 
 xsmap$preds<-p[,2]
@@ -351,7 +368,7 @@ lpr<-foreach(j=seq_along(days),.packages=c("raster")) %do% {
   dat<-cbind(dat,data.frame(jul=days[j],julsquare=days[j]^2)[rep(1,nrow(dat)),])
   dat<-cbind(dat,juls[,names(juls)%in%paste0("X",1:50)][rep(1,nrow(dat)),])
   dat<-cbind(intercept=1,dat)
-  p<-lapply(1:nsims,function(i){
+  p<-lapply((1:nsims)[1:20],function(i){
     betas<-samples[[i]]$latent[nparams]
     names(betas)<-ifelse(names(nparams)%in%1:50,paste0("X",names(nparams)),names(nparams))
     fixed<-as.matrix(dat[,names(betas)]) %*% betas # make sure betas and vars are in the same order
@@ -360,22 +377,25 @@ lpr<-foreach(j=seq_along(days),.packages=c("raster")) %do% {
     #if(is.factor(xs@data[,v[k]])){ # factors never in model (et)
     #spatial<-as.matrix(inla.spde.make.A(mesh=mesh,loc=matrix(c(0.3,0.5),ncol=2)[rep(1,nlevels(size[,v[k]])),,drop=FALSE])) %*% wk
     #}else{
-    spatial<-Amapmatrix %*% wk
+    #spatial<-Amapmatrix %*% wk
+    spatial<-arma_mm(Amapmatrix,wk) # ~ 2 times faster than %*%
     #}
     p<-fixed+spatial
     #p<-fixed # ignores spatial part
     #p<-spatial
-    #print(i)
-    p
+    cat("\r",paste(i,"/",max(nsims)," - ",j,"/",length(days)))
+    p[,1]
   })
   p<-do.call("cbind",p)
-  p<-t(apply(p,1,function(i){c(quantile(i,0.0275),mean(i),quantile(i,0.975))}))
-  p<-exp(p)
+  #p<-t(apply(p,1,function(i){c(quantile(i,0.0275,na.rm=TRUE),mean(i,na.rm=TRUE),quantile(i,0.975,na.rm=TRUE))}))
+  p<-cbind(rowQuantiles(p,probs=c(0.0275,0.975),na.rm=TRUE),rowMeans(p,na.rm=TRUE))[,c(1,3,2)]
+  #p<-exp(p)
   xsmap$preds<-p[,2]
   pr<-rasterize(xsmap,pgrid,field="preds",fun=mean)
   pr<-mask(pr,mappingzone)
+  pr<-exp(pr)
   #pr<-disaggregate(pr,fact=1,method="bilinear")
-  print(j)
+  #print(j)
   pr
 }
 
