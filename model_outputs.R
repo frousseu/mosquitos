@@ -15,15 +15,15 @@ fixed<-formula(paste("y ~",as.character(model[[3]])[2]))
 inla.setOption(inla.mode="experimental")
 
 ### The best model without the spatial effect ################################
-mfixed <- inla(fixed,data=inla.stack.data(stackest), 
-          control.predictor=list(compute=TRUE, A=inla.stack.A(stackest),link=1), 
-          #control.family=list(hyper=list(theta=prec.prior)), 
-          control.fixed=control.fixed,
-          control.inla = list(strategy='gaussian',int.strategy = "eb"),
-          num.threads="2:2",
-          verbose=TRUE,
-          control.compute=list(dic=TRUE,waic=FALSE,cpo=FALSE,config=TRUE),
-          family="nbinomial")#"zeroinflatednbinomial1"
+#mfixed <- inla(fixed,data=inla.stack.data(stackest), 
+#          control.predictor=list(compute=TRUE, A=inla.stack.A(stackest),link=1), 
+#          #control.family=list(hyper=list(theta=prec.prior)), 
+#          control.fixed=control.fixed,
+#          control.inla = list(strategy='gaussian',int.strategy = "eb"),
+#          num.threads="2:2",
+#          verbose=TRUE,
+#          control.compute=list(dic=TRUE,waic=FALSE,cpo=FALSE,config=TRUE),
+#          family="nbinomial")#"zeroinflatednbinomial1"
 
 
 mfixed <- inla(fixed,data=cbind(y=xs$sp,xs@data), 
