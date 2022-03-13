@@ -73,7 +73,7 @@ cat("\014")
 inla.setOption(inla.mode="experimental")
 year<-c(2003:2016);
 weeks<-10:50
-spcode<-c("VEX_","CPR_","CQP_","SMG_")[4] # change index to change species
+spcode<-c("VEX_","CPR_","CQP_","SMG_")[2] # change index to change species
 lweeks<-lapply(year,function(i){list(i,weeks)})
 #lweeks<-list(list(2014,weeks),list(2015,29:32))
 weeks<-apply(do.call("rbind",lapply(lweeks,function(i){expand.grid(year=i[[1]],week=i[[2]])})),1,function(i){paste(i[1],i[2],sep="_W")})
@@ -95,7 +95,7 @@ xs$jul<-as.integer(format(as.Date(xs$date),"%j"))
 #### Scale variables ########################
 
 #vs<-unique(unlist(lapply(unlist(models),all.vars)))
-vs<-names(xs)[grep("50|1000|anom|prcp,tmean",names(xs))]
+vs<-names(xs)[grep("jul|50|1000|anom|prcp|tmean",names(xs))]
 vs<-vs[!vs%in%c("lognights","spde","knots","y","spatial")]
 vscale<-lapply(xs@data[xs$db!="map",vs],function(i){c(mean=mean(i),sd=sd(i))})
 xs@data[vs]<-lapply(vs,function(i){(xs@data[[i]]-vscale[[i]][1])/vscale[[i]][2]})
@@ -157,7 +157,7 @@ if(TRUE){
 }
 
 
-edge<-0.5
+edge<-2
 #domain <- inla.nonconvex.hull(coordinates(ds),convex=-0.015, resolution = c(100, 100))
 #mesh<-inla.mesh.2d(loc.domain=coordinates(ds),max.edge=c(edge,3*edge),offset=c(edge,1*edge),cutoff=edge,boundary=domain,crs=CRS(proj4string(xs)))
 #domain <- inla.nonconvex.hull(coordinates(xs2pts),convex = -0.15, concave = 0.5, resolution = c(340,340))

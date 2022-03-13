@@ -3,13 +3,15 @@
 library(INLA)
 library(splines)
 
-load("model_parameters.RData")
+load("CPR_model_parameters.RData")
 
 # Only the stack for estimation is used here
 # This file is mean to be ran on a server so necessary packages need to be called
 
 spmodels<-models[[gsub("_","",spcode)]]
 dics<-numeric(length(spmodels))
+
+inla.setOption(inla.mode="experimental")
 
 for(i in seq_along(dics)){
 
@@ -30,4 +32,9 @@ print(paste(Sys.time(),"-",round(dics[i],1),"-",i,"/",length(dics)))
 
 }
 
-save(dics,spmodels,file="model_selection.RData")
+#save(dics,spmodels,file=paste0(spcode,"model_selection.RData"))
+rm(m) # make sure no model is kept to reduce possibility of errors
+
+save.image(paste0(spcode,"model_selection.RData"))
+
+print("Done !")

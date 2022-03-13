@@ -3,6 +3,16 @@ library(RcppArmadillo)
 library(Rcpp)
 library(matrixStats)
 
+options(device = "X11")
+grDevices::windows.options(record=TRUE)
+Sys.setlocale("LC_ALL","English")
+# first set working directory
+# all files should be in this folder
+
+## RESULTS ##################################################
+
+load("CPR_model_outputs.RData")
+
 
 # for master matrix * vector multiplications when combining posterior samples
 # code stolen from https://stackoverflow.com/questions/51054227/why-is-this-naive-matrix-multiplication-faster-than-base-rs
@@ -12,11 +22,6 @@ arma_code <-
    };"
 arma_mm = cppFunction(code = arma_code, depends = "RcppArmadillo")
 
-
-## RESULTS ##################################################
-
-load("model_selection.RData")
-load("model_outputs.RData")
 
 #### DIC ####################################################
 
@@ -224,7 +229,7 @@ lapply(names(pred)[c(1,2,5,4,3,6)],function(i){
   #if(i%in%c("sd","mean")){
   if(i%in%quantities){
     zlim<-NULL # limits specific to graph
-    if(i %in% quantities[1:3] && TRUE){ # limits determined by CI if TRUE
+    if(i %in% quantities[1:3] && FALSE){ # limits determined by CI if TRUE
       zlim<-range(values(pred2[[quantities[1:3]]]),na.rm=TRUE) 
     }
     axis.args=list(at=frange(values(pred2[[i]])),labels=round(f(frange(values(pred2[[i]]))),0),cex.axis=0.8,lwd=0,tck=-0.2,mgp=c(3,0.3,0),lwd.ticks=1)
@@ -291,7 +296,7 @@ Amapmatrix<-as.matrix(Amap)
 #for(k in seq_along(v1m)){
 p<-lapply((1:nsims)[1:100],function(i){
   dat<-xsmap@data
-  juls<-lp[["jul"]][which.min(abs(lp[["jul"]]$jul-dat$jul[1])),,drop=FALSE] # finds the closest jul value to get the corresponding sline basis
+  juls<-lp[["jul"]][which.min(abs(lp[["jul"]]$jul-dat$jul[1])),,drop=FALSE] # finds the closest jul value to get the corresponding spline basis
   dat<-cbind(dat,juls[,names(juls)%in%paste0("X",1:50)][rep(1,nrow(dat)),])
   betas<-samples[[i]]$latent[nparams]
   names(betas)<-ifelse(names(nparams)%in%1:50,paste0("X",names(nparams)),names(nparams))
@@ -520,6 +525,9 @@ points(h2$mids,h2$density,pch=16,cex=1.25,col=alpha("red",0.7))
 plot(m$summary.fitted.values[index[["est"]],1],xs$sp,asp=1)
 cor(m$summary.fitted.values[index[["est"]],1],xs$sp)^2
 
+plot(mfixed$summary.fitted.values[,1],xs$sp,asp=1)
+cor(mfixed$summary.fitted.values[,1],xs$sp)^2
+
 
 #### SPDE posteriors ##########################################
 
@@ -530,3 +538,42 @@ plot(res$marginals.range.nominal[[1]],
 plot(inla.tmarginal(sqrt, res$marginals.variance.nominal[[1]]),
      type="l", main="Posterior density for std.dev.")
 par(mfrow=c(1,1))
+
+
+### check lp combinations for lcc vars
+
+
+lpx<-lapply(names(vscale),function(i){
+  bscale(lp[["agriculture50"]][,i],i)  
+})
+
+vs<-c("agriculture1000","forest1000","urban1000","water1000","shrub1000","barren1000","wetland1000")
+
+hist(rowSums(do.call("cbind",lapply(vs,function(i){
+  bscale(xs@data[,i],i)
+}))),xlab="")
+
+
+
+vs<-c("agriculture1000","forest1000","urban1000","water1000","shrub1000","barren1000","wetland1000")
+#vs<-paste0(vs,".y")
+
+hist(rowSums(ds@data[,vs]),xlab="",xlim=0:1,breaks=50)
+
+
+### Compare with glmmTMB
+
+library(patchwork)
+library(ggplot2)
+library(ggeffects)
+
+dat<-xs@data[xs$db!="map",]
+
+mm<-glmmTMB(sp ~ -1 + ns(jul, df=9) + agriculture50 + forest50 + anom2 + prcp2 + anom90 + prcp90 + offset(lognights), ziformula=~0, data=dat,family=nbinom2())
+
+vs<-all.vars(formula(mm))[-1]
+gl<-lapply(vs,function(i){
+  g<-ggeffect(mm,terms=paste(i,"[n=100]"))
+  plot(g,add=TRUE,jitter=FALSE)+coord_cartesian(ylim = c(0, 500)) 
+})
+wrap_plots(gl,nrow=2)

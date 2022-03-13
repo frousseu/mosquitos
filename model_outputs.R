@@ -4,8 +4,7 @@ library(INLA)
 library(splines)
 
 
-load("model_parameters.RData")
-load("model_selection.RData")
+load("CPR_model_selection.RData")
 
 # select the best model from the list
 model<-spmodels[[which.min(dics)]]
@@ -13,10 +12,11 @@ model<-spmodels[[which.min(dics)]]
 # the formula for the best model without the spatial effect
 fixed<-formula(paste("y ~",as.character(model[[3]])[2]))
 
+inla.setOption(inla.mode="experimental")
 
 ### The best model without the spatial effect ################################
-mfixed <- inla(fixed,data=inla.stack.data(stackfull), 
-          control.predictor=list(compute=TRUE, A=inla.stack.A(stackfull),link=1), 
+mfixed <- inla(fixed,data=inla.stack.data(stackest), 
+          control.predictor=list(compute=TRUE, A=inla.stack.A(stackest),link=1), 
           #control.family=list(hyper=list(theta=prec.prior)), 
           control.fixed=control.fixed,
           control.inla = list(strategy='gaussian',int.strategy = "eb"),
@@ -25,6 +25,16 @@ mfixed <- inla(fixed,data=inla.stack.data(stackfull),
           control.compute=list(dic=TRUE,waic=FALSE,cpo=FALSE,config=TRUE),
           family="nbinomial")#"zeroinflatednbinomial1"
 
+
+mfixed <- inla(fixed,data=cbind(y=xs$sp,xs@data), 
+               control.predictor=list(compute=TRUE,link=1), 
+               #control.family=list(hyper=list(theta=prec.prior)), 
+               control.fixed=control.fixed,
+               control.inla = list(strategy='gaussian',int.strategy = "eb"),
+               num.threads="2:2",
+               verbose=TRUE,
+               control.compute=list(dic=TRUE,waic=FALSE,cpo=FALSE,config=TRUE),
+               family="nbinomial")#"zeroinflatednbinomial1"
   
   
 ### The best model with the spatial model ####################################
@@ -62,4 +72,7 @@ nbsize<-sampleshyper[,grep("size",dimnames(sampleshyper)[[2]])]
 zeroprob<-sampleshyper[,grep("probability",dimnames(sampleshyper)[[2]])]
 
 
-save.image("model_outputs.RData")
+#save.image("VEX_model_outputs.RData")
+save.image(paste0(spcode,"model_outputs.RData"))
+
+print("Done !")
