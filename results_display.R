@@ -106,7 +106,7 @@ nweights<-grep("spatial",row.names(samples[[1]]$latent))
 
 v1m<-c("jul",v1[v1%in%row.names(m$summary.fixed)])
 
-par(mfrow=n2mfrow(length(v1m),asp=3.5/2),mar=c(3,2,1,1),oma=c(0,10,0,0))
+par(mfrow=n2mfrow(length(v1m),asp=3.45/2),mar=c(3,2,1,1),oma=c(0,10,0,0))
 for(k in seq_along(v1m)){
   p<-lapply(1:nsims,function(i){
     betas<-samples[[i]]$latent[nparams]
@@ -504,7 +504,7 @@ lpr<-foreach(j=seq_along(days),.packages=c("raster")) %do% {
   dat<-cbind(dat,data.frame(jul=days[j],julsquare=days[j]^2)[rep(1,nrow(dat)),])
   dat<-cbind(dat,juls[,names(juls)%in%paste0("X",1:50)][rep(1,nrow(dat)),])
   dat<-cbind(intercept=1,dat)
-  p<-lapply((1:nsims)[1:50],function(i){
+  p<-lapply((1:nsims)[1:20],function(i){
     betas<-samples[[i]]$latent[nparams]
     names(betas)<-ifelse(names(nparams)%in%1:50,paste0("X",names(nparams)),names(nparams))
     fixed<-as.matrix(dat[,names(betas)]) %*% betas # make sure betas and vars are in the same order

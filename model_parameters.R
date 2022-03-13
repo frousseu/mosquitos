@@ -73,7 +73,7 @@ cat("\014")
 inla.setOption(inla.mode="experimental")
 year<-c(2003:2016);
 weeks<-10:50
-spcode<-c("VEX_","CPR_","CQP_","SMG_")[2] # change index to change species
+spcode<-c("VEX_","CPR_","CQP_","SMG_")[3] # change index to change species
 lweeks<-lapply(year,function(i){list(i,weeks)})
 #lweeks<-list(list(2014,weeks),list(2015,29:32))
 weeks<-apply(do.call("rbind",lapply(lweeks,function(i){expand.grid(year=i[[1]],week=i[[2]])})),1,function(i){paste(i[1],i[2],sep="_W")})
@@ -142,8 +142,7 @@ if(TRUE){
   xs2map<-xs2map[predmap,]
   plot(st_geometry(xs2map),add=TRUE)
   
-  #set.seed(1234)
-  #xs3pts<-as(st_sample(predmap,3000),"Spatial")
+  set.seed(1234)
   xs3pts<-as(st_sample(st_as_sf(mappingzone),10000),"Spatial")
   xs2pts<-as(st_cast(predmap,"MULTIPOINT"),"Spatial")
   xs2<-as(xs2,"Spatial")
@@ -157,7 +156,7 @@ if(TRUE){
 }
 
 
-edge<-2
+edge<-0.5
 #domain <- inla.nonconvex.hull(coordinates(ds),convex=-0.015, resolution = c(100, 100))
 #mesh<-inla.mesh.2d(loc.domain=coordinates(ds),max.edge=c(edge,3*edge),offset=c(edge,1*edge),cutoff=edge,boundary=domain,crs=CRS(proj4string(xs)))
 #domain <- inla.nonconvex.hull(coordinates(xs2pts),convex = -0.15, concave = 0.5, resolution = c(340,340))

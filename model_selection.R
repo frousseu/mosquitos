@@ -3,7 +3,7 @@
 library(INLA)
 library(splines)
 
-load("CPR_model_parameters.RData")
+load("CQP_model_parameters.RData")
 
 # Only the stack for estimation is used here
 # This file is mean to be ran on a server so necessary packages need to be called
@@ -36,5 +36,7 @@ print(paste(Sys.time(),"-",round(dics[i],1),"-",i,"/",length(dics)))
 rm(m) # make sure no model is kept to reduce possibility of errors
 
 save.image(paste0(spcode,"model_selection.RData"))
+
+source("model_outputs.R")
 
 print("Done !")

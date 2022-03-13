@@ -4,7 +4,7 @@ library(INLA)
 library(splines)
 
 
-load("CPR_model_selection.RData")
+load("CQP_model_selection.RData")
 
 # select the best model from the list
 model<-spmodels[[which.min(dics)]]
