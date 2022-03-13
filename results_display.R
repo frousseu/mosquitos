@@ -480,6 +480,107 @@ animation <- image_animate(img, fps = 1, optimize = TRUE)
 image_write(animation,file.path("C:/Users/God/Downloads",paste0(paste0(spcode,yearpred),".gif")))
 
 
+#### Custom map predictions with posterior samples ############################
+
+params<-dimnames(m$model.matrix)[[2]]
+nparams<-sapply(params,function(i){
+  #grep(paste0(i,":"),row.names(samples[[1]]$latent))  
+  match(paste0(i,":1"),row.names(samples[[1]]$latent)) 
+}) 
+#table(sapply(strsplit(row.names(samples[[1]]$latent),":"),"[",1))
+yearpred<-"2003"
+nweights<-grep("spatial",row.names(samples[[1]]$latent))
+Amapp<-inla.spde.make.A(mesh=mesh,loc=coordinates(xsmap)) 
+Amapmatrix<-as.matrix(Amapp)
+
+days<-c("06-01","07-01","08-01","09-01")
+days<-as.integer(format(as.Date(paste(yearpred,days,sep="-")),"%j"))
+days<-(days-vscale$jul[["mean"]])/vscale$jul[["sd"]]
+
+lpr<-foreach(j=seq_along(days),.packages=c("raster")) %do% {
+  juls<-lp[["jul"]][which.min(abs(lp[["jul"]]$jul-days[j])),,drop=FALSE]
+  standardv<-names(nparams)[!names(nparams)%in%c("intercept","jul","julsquare",1:50)]
+  dat<-as.matrix(xsmap@data[,standardv])
+  dat<-cbind(dat,data.frame(jul=days[j],julsquare=days[j]^2)[rep(1,nrow(dat)),])
+  dat<-cbind(dat,juls[,names(juls)%in%paste0("X",1:50)][rep(1,nrow(dat)),])
+  dat<-cbind(intercept=1,dat)
+  p<-lapply((1:nsims)[1:50],function(i){
+    betas<-samples[[i]]$latent[nparams]
+    names(betas)<-ifelse(names(nparams)%in%1:50,paste0("X",names(nparams)),names(nparams))
+    fixed<-as.matrix(dat[,names(betas)]) %*% betas # make sure betas and vars are in the same order
+    wk<-samples[[i]]$latent[nweights]
+    #spatial<-Amapmatrix %*% wk
+    spatial<-arma_mm(Amapmatrix,wk) # ~ 2 times faster than %*%
+    #}
+    p<-fixed+spatial
+    #p<-fixed # ignores spatial part
+    #p<-spatial
+    cat("\r",paste(i,"/",max(nsims)," - ",j,"/",length(days)))
+    p[,1]
+  })
+  p<-do.call("cbind",p)
+  p<-cbind(rowQuantiles(p,probs=c(0.0275,0.975),na.rm=TRUE),rowMeans(p,na.rm=TRUE))[,c(1,3,2)]
+  xsmap$preds<-p[,2]
+  pr<-rasterize(xsmap,pgrid,field="preds",fun=mean)
+  pr<-mask(pr,mappingzone)
+  pr<-exp(pr)
+  #pr<-disaggregate(pr,fact=1,method="bilinear")
+  pr
+}
+
+lpr<-lapply(lpr,rast)
+
+
+png(file.path("C:/Users/God/Downloads",paste0(spcode,".png")),width=13,height=8,units="in",res=300)
+par(mfrow=n2mfrow(length(days),asp=3.5/2),mar=c(0,0,3,0),oma=c(0,0,0,0))
+
+jul<-round(days*vscale[["jul"]]["sd"]+vscale[["jul"]]["mean"],0)
+datelim<-range(as.Date(format(as.Date(jul,origin=paste0(yearpred,"-01-01")),"%Y-%m-%d")))+c(-5,5)
+
+zlim1<-range(sapply(lpr,function(i){range(values(i),na.rm=TRUE)}))
+zlim2<-range(c(sapply(lpr,function(i){range(values(i),na.rm=TRUE)}),xs$sp[xs$year==yearpred]))
+zlim<-c(zlim1[1],zlim2[2])
+
+lapply(seq_along(lpr),function(i){
+  j<-round(days[i]*vscale[["jul"]]["sd"]+vscale[["jul"]]["mean"],0)
+  xdate<-as.Date(format(as.Date(j,origin=paste0(yearpred,"-01-01")),"%Y-%m-%d"))
+  at<-seq(min(values(log(lpr[[i]])),na.rm=TRUE),max(values(log(lpr[[i]])),na.rm=TRUE),length.out=5)
+  #lab<-ifelse(round(exp(at),0)==0,round(exp(at),2),round(exp(at),0))
+  lab<-sapply(at,function(a){
+    e<-exp(a)
+    if(e<=0.001){return(round(e,4))}
+    if(e<=0.01){return(round(e,3))}
+    if(e<=0.1){return(round(e,2))}
+    if(e<=2){return(round(e,1))}
+    if(e>2){return(round(e,0))}
+  })
+  labels<-paste(lab,c("min pred. > 0",rep("",length(at)-2),"max pred."))
+  plot(log(lpr[[i]]),range=log(zlim),col=cols,asp=1,axes=FALSE,bty="n",plg=list(at=at,labels=labels,cex=0.75))
+  plot(st_geometry(water),border=NA,col="white",add=TRUE)
+  rd<-as.character(seq.Date(xdate-3,xdate+3,by=1))
+  xxs<-st_transform(st_as_sf(xs[xs$date%in%rd,]),crs=crs(lpr[[1]]))
+  colobs<-c(log(zlim),log(xxs$sp))
+  colobs<-ifelse(is.infinite(colobs),NA,colobs)
+  colobs<-colo.scale(colobs,cols)[-(1:2)]
+  colobs<-ifelse(is.na(colobs),"#FFFFFF",colobs)
+  #plot(st_geometry(xxs),pch=1,cex=scales::rescale(identity(c(0,max(xs$sp[xs$year==yearpred],na.rm=TRUE),xxs$sp)+0.01),to=c(0.25,10))[-(1:2)],add=TRUE)
+  plot(st_geometry(xxs),pch=21,cex=1,add=TRUE,bg=colobs,col="grey10",lwd=0.4)
+  #text(st_coordinates(st_geometry(xxs)),label=xxs$sp,cex=0.6,col="grey10",adj=c(0.5,-0.8))
+  mtext(side=3,line=1,text=paste(gsub("_","",spcode),yearpred,sep="  "),adj=0.0)
+  mtext(side=3,line=0,text=paste("predictions:",paste(format(xdate,"%b-%d"),collapse=" to "),sep="  "),adj=0.0)
+  mtext(side=3,line=-1,text=paste("observations:",paste(format(as.Date(range(rd)),"%b-%d"),collapse=" to "),sep="  "),adj=0.0)
+
+  mtext(side=4,line=-1,text="Number of mosquitos per trap (observed and predicted)",adj=0.5,cex=0.7)
+  xp<-xmin(lpr[[1]])+((xmax(lpr[[1]])-xmin(lpr[[1]]))*c(0.85,0.85))
+  yp<-ymin(lpr[[1]])+((ymax(lpr[[1]])-ymin(lpr[[1]]))*c(1.1,1.05)) 
+  points(xp,yp,pch=21,cex=1,bg=colobs[c(which.min(xxs$sp),which.max(xxs$sp))],col="grey10",lwd=0.4,xpd=TRUE)
+  #text(xp,yp,label=,cex=0.7,col="grey10",adj=c(0.5,-1))
+  text(xp,yp,label=paste(c("min obs.","max obs."),xxs$sp[c(which.min(xxs$sp),which.max(xxs$sp))]),cex=0.7,col="grey10",adj=c(1.2,0.5),xpd=TRUE)
+
+  
+})
+dev.off()
+file.show(file.path("C:/Users/God/Downloads",paste0(spcode,".png")))
 
 #### Model checks ##############################################
 
