@@ -11,8 +11,12 @@ Sys.setlocale("LC_ALL","English")
 
 ## RESULTS ##################################################
 
-load("CPR_model_outputs.RData")
+load("CQP_model_outputs.RData")
 
+ls()[sapply(ls(),function(i){
+  obj<-paste0("\\b",i,"\\b")
+  as.logical(length(grep(obj,readLines("C:/Users/God/Documents/mosquitos/results_display.R"),value=T)))
+})]
 
 # for master matrix * vector multiplications when combining posterior samples
 # code stolen from https://stackoverflow.com/questions/51054227/why-is-this-naive-matrix-multiplication-faster-than-base-rs
@@ -22,6 +26,20 @@ arma_code <-
    };"
 arma_mm = cppFunction(code = arma_code, depends = "RcppArmadillo")
 
+
+niceround<-function(x){
+  res<-lapply(x,function(e){
+    #e<-exp(a)
+    if(e<=0.00001){return(round(e,6))}
+    if(e<=0.0001){return(round(e,5))}
+    if(e<=0.001){return(round(e,4))}
+    if(e<=0.01){return(round(e,3))}
+    if(e<=0.1){return(round(e,2))}
+    if(e<2){return(formatC(e,format="f",digits=1))}
+    if(e>=2){return(round(e,0))}
+  })
+  sapply(res,as.character)
+}
 
 #### DIC ####################################################
 
@@ -203,12 +221,21 @@ pred<-stack(pred,meansd)
 #pred<-mask(pred,buf)
 pred<-mask(pred,mappingzone)
 
-cols<-alpha(colo.scale(200,c("steelblue3","lightgoldenrod","orange","red3","darkred","grey10")),0.80)
+cols<-alpha(colo.scale(200,c("darkblue","steelblue3","lightgoldenrod","orange","red3","darkred","grey10")),0.80)
 colssd<-rev(cividis(200))
-colsfield<-colo.scale(seq(range(values(pred[["mean.spatial.field"]]),na.rm=TRUE)[1],range(values(pred[["mean.spatial.field"]]),na.rm=TRUE)[2],length.out=200),c("navyblue","steelblue","ivory2","firebrick3","firebrick4"),center=TRUE)#,"grey20"))
+colsfield<-colo.scale(seq(range(values(pred[["mean.spatial.field"]]),na.rm=TRUE)[1],range(values(pred[["mean.spatial.field"]]),na.rm=TRUE)[2],length.out=200),c("darkblue","steelblue","ivory3","firebrick3","firebrick4"),center=TRUE)#,"grey20"))
+
+titles<-c("Mean","CI 2.5%","CI 97.5%","SD","Mean Spatial Field","SD Spatial Field")
+legtitles<-c("Nb. of Mosquitos / trap","Nb. of Mosquitos / trap","Nb. of Mosquitos / trap","Nb. of Mosquitos / trap (on the link scale)","Nb. of Mosquitos / trap (on the link scale)","Nb. of Mosquitos / trap (on the link scale)")
+names(titles)<-names(pred)
+names(legtitles)<-names(pred)  
+
+
+
+png(file.path("C:/Users/God/Downloads",paste0(spcode,"maps_all.png")),width=16,height=8,units="in",res=300,pointsize=11)
 
 par(mfrow=n2mfrow(nlayers(pred),asp=1.5),mar=c(1,0.5,1,5),oma=c(0,0,0,0),bty="n")
-lapply(names(pred)[c(1,2,5,4,3,6)],function(i){
+lapply(names(pred),function(i){
   print(i)
   if(i%in%names(meansd)){
     pred2<-pred
@@ -229,16 +256,16 @@ lapply(names(pred)[c(1,2,5,4,3,6)],function(i){
   #if(i%in%c("sd","mean")){
   if(i%in%quantities){
     zlim<-NULL # limits specific to graph
-    if(i %in% quantities[1:3] && FALSE){ # limits determined by CI if TRUE
+    if(i %in% quantities[1:3] && TRUE){ # limits determined by CI if TRUE
       zlim<-range(values(pred2[[quantities[1:3]]]),na.rm=TRUE) 
     }
-    axis.args=list(at=frange(values(pred2[[i]])),labels=round(f(frange(values(pred2[[i]]))),0),cex.axis=0.8,lwd=0,tck=-0.2,mgp=c(3,0.3,0),lwd.ticks=1)
-    legend.args=list(text='Nb of mosquitos / trap', side=4, font=2, line=-2.5, cex=0.8)
+    axis.args=list(at=frange(values(pred2[[i]])),labels=niceround(f(frange(values(pred2[[i]])))),cex.axis=0.8,lwd=0,tck=-0.2,mgp=c(3,0.3,0),lwd.ticks=1)
+    legend.args=list(text=legtitles[i], side=4, font=2, line=-2.5, cex=0.8)
   }else{
     if(i%in%names(meansd)){
       zlim<-NULL
-      axis.args=list(at=frange(values(pred2[[i]])),labels=round(f(frange(values(pred2[[i]]))),2),cex.axis=0.8,lwd=0,tck=-0.2,mgp=c(3,0.3,0),lwd.ticks=1)
-      legend.args=list(text='Nb of mosquitos / trap', side=4, font=2, line=-2.5, cex=0.8)
+      axis.args=list(at=sort(c(0,frange(values(pred2[[i]])))),labels=sort(round(c(0,f(frange(values(pred2[[i]])))),1)),cex.axis=0.8,lwd=0,tck=-0.2,mgp=c(3,0.3,0),lwd.ticks=1)
+      legend.args=list(text=legtitles[i], side=4, font=2, line=-2.5, cex=0.8)
     }else{
       #zlim<-range(values(pred2[[quantities[1:3]]]),na.rm=TRUE)
       #axis.args=list(at=c(frange(zlim),range(values(pred2[[i]]),na.rm=TRUE)),labels=round(f(c(frange(zlim),range(values(pred2[[i]]),na.rm=TRUE))),0),cex.axis=0.8,lwd=0,tck=-0.2,mgp=c(3,0.3,0),lwd.ticks=1)
@@ -247,15 +274,17 @@ lapply(names(pred)[c(1,2,5,4,3,6)],function(i){
   }
   plot(pred2[[i]],col=col,zlim=zlim,legend.width=2.5, legend.shrink=1,axis.args=axis.args,legend.args=legend.args,axes=FALSE,box=FALSE,tcl=0.2,mgp=c(1.5,0.0,0),cex.axis=0.7)
   plot(st_geometry(water),border=NA,col="white",add=TRUE)
-  obs<-xs$sp[xs$week%in%unique(xsmap$week)]
+  show<-unique(xsmap$week) # show only obs from a given year in the week
+  show<-paste0(2003:2016,substr(unique(xsmap$week),5,8)) # show obs from all years in a given week
+  obs<-xs$sp[xs$week%in%show]
   cexminmax<-c(1,10)  
   ocex<-scales::rescale(c(ifelse(obs==0,1,identity(obs))),to=cexminmax)
   opch<-ifelse(obs==0,4,1)
-  plot(xs[xs$week%in%unique(xsmap$week),],add=TRUE,cex=ocex,pch=opch,lwd=1,col=gray(0.2,1))
+  plot(xs[xs$week%in%show,],add=TRUE,cex=ocex,pch=opch,lwd=0.2,col=gray(0.2,1))
   #plot(Q,add=TRUE,border=gray(0,0.25))
   #plot(mappingzone,add=TRUE)
   #plot(mesh,add=TRUE)
-  mtext(side=3,line=-3,text=i,adj=0.05,font=2,cex=2)
+  mtext(side=3,line=-3,text=titles[i],adj=0.05,font=2,cex=2)
   if(i %in% names(meansd)){
     plot(xs,add=TRUE,cex=0.5,pch=3,lwd=1,col=gray(0.2,1))
   }
@@ -274,9 +303,11 @@ lapply(names(pred)[c(1,2,5,4,3,6)],function(i){
   posx<-posx[-c(1,length(posx))]-diff(posx)[1]*0.25
   posy<-rep(diff(par("usr")[c(3,4)])*0.075+par("usr")[3],length(vpch))
   points(posx,posy,cex=vcex,pch=vpch,col=gray(0.2,1))
-  text(posx,posy,label=vleg,adj=c(0.5,3))
+  text(posx,posy,label=vleg,adj=c(0.5,4),xpd=TRUE)
 })
 
+dev.off()
+file.show(file.path("C:/Users/God/Downloads",paste0(spcode,"maps_all.png")))
 
 #### Map predictions with posteriors samples #############################
 
@@ -428,14 +459,7 @@ lapply(seq_along(lpr),function(i){
   par(mar=c(0,0,0,0))
   at<-seq(min(values(log(lpr[[i]])),na.rm=TRUE),max(values(log(lpr[[i]])),na.rm=TRUE),length.out=5)
   #lab<-ifelse(round(exp(at),0)==0,round(exp(at),2),round(exp(at),0))
-  lab<-sapply(at,function(a){
-    e<-exp(a)
-    if(e<=0.001){return(round(e,4))}
-    if(e<=0.01){return(round(e,3))}
-    if(e<=0.1){return(round(e,2))}
-    if(e<=2){return(round(e,1))}
-    if(e>2){return(round(e,0))}
-  })
+  lab<-niceround(exp(at))
   labels<-paste(lab,c("min pred. > 0",rep("",length(at)-2),"max pred."))
   plot(log(lpr[[i]]),range=log(zlim),col=cols,asp=1,axes=FALSE,bty="n",plg=list(at=at,labels=labels,cex=1.5))
   plot(st_geometry(water),border=NA,col="white",add=TRUE)
@@ -493,7 +517,7 @@ nweights<-grep("spatial",row.names(samples[[1]]$latent))
 Amapp<-inla.spde.make.A(mesh=mesh,loc=coordinates(xsmap)) 
 Amapmatrix<-as.matrix(Amapp)
 
-days<-c("06-01","07-01","08-01","09-01")
+days<-c("06-06","06-08","06-10","06-12")
 days<-as.integer(format(as.Date(paste(yearpred,days,sep="-")),"%j"))
 days<-(days-vscale$jul[["mean"]])/vscale$jul[["sd"]]
 
@@ -546,14 +570,7 @@ lapply(seq_along(lpr),function(i){
   xdate<-as.Date(format(as.Date(j,origin=paste0(yearpred,"-01-01")),"%Y-%m-%d"))
   at<-seq(min(values(log(lpr[[i]])),na.rm=TRUE),max(values(log(lpr[[i]])),na.rm=TRUE),length.out=5)
   #lab<-ifelse(round(exp(at),0)==0,round(exp(at),2),round(exp(at),0))
-  lab<-sapply(at,function(a){
-    e<-exp(a)
-    if(e<=0.001){return(round(e,4))}
-    if(e<=0.01){return(round(e,3))}
-    if(e<=0.1){return(round(e,2))}
-    if(e<=2){return(round(e,1))}
-    if(e>2){return(round(e,0))}
-  })
+  lab<-niceround(at)
   labels<-paste(lab,c("min pred. > 0",rep("",length(at)-2),"max pred."))
   plot(log(lpr[[i]]),range=log(zlim),col=cols,asp=1,axes=FALSE,bty="n",plg=list(at=at,labels=labels,cex=0.75))
   plot(st_geometry(water),border=NA,col="white",add=TRUE)
@@ -623,11 +640,24 @@ points(h2$mids,h2$density,pch=16,cex=1.25,col=alpha("red",0.7))
 
 #### Explanatory/Predictive power #############################
 
-plot(m$summary.fitted.values[index[["est"]],1],xs$sp,asp=1)
-cor(m$summary.fitted.values[index[["est"]],1],xs$sp)^2
+ff<-function(x){
+  if(FALSE){
+    log(x+1)
+  }else{
+    identity(x)
+  }
+}
 
-plot(mfixed$summary.fitted.values[,1],xs$sp,asp=1)
-cor(mfixed$summary.fitted.values[,1],xs$sp)^2
+quant<-c("mean","0.5quant")[1]
+
+par(mfrow=c(1,2))
+plot(ff(m$summary.fitted.values[index[["est"]],quant]),ff(xs$sp),asp=1)
+plot(ff(mfixed$summary.fitted.values[,quant]),ff(xs$sp),asp=1)
+par(mfrow=c(1,1))
+cor(ff(m$summary.fitted.values[index[["est"]],quant]),ff(xs$sp))^2
+cor(ff(mfixed$summary.fitted.values[,quant]),ff(xs$sp))^2
+
+
 
 
 #### SPDE posteriors ##########################################
@@ -669,12 +699,32 @@ library(ggplot2)
 library(ggeffects)
 
 dat<-xs@data[xs$db!="map",]
+dat$y<-as.integer(dat$sp>0)
 
-mm<-glmmTMB(sp ~ -1 + ns(jul, df=9) + agriculture50 + forest50 + anom2 + prcp2 + anom90 + prcp90 + offset(lognights), ziformula=~0, data=dat,family=nbinom2())
+mm<-glmmTMB(sp ~ ns(jul,knots=knots) + agriculture50 + forest50 + agriculture1000 + forest1000 + anom2 + prcp2 + anom30 + prcp30 + offset(lognights), ziformula=~1, data=dat,family=nbinom2())
+
+#mm<-glmmTMB(y ~ ns(jul,knots=knots) + agriculture50 + forest50 + agriculture1000 + forest1000 + anom2 + prcp2 + anom30 + prcp30 + offset(lognights), ziformula=~0, data=dat,family=binomial())
+
+plot(lp$jul$jul,predict(mm,newdata=cbind(lp$jul,lognights=0),type="response"),type="l",ylim=c(0,50))
+points(dat$jul,dat$sp)
+abline(v=knots,lty=3)
+
+#mm<-gam(sp ~ poly(jul,3) + agriculture50 + forest50 + agriculture1000 + forest1000 + anom2 + prcp2 + anom30 + prcp30 + offset(lognights), data=dat,family="nb")
 
 vs<-all.vars(formula(mm))[-1]
 gl<-lapply(vs,function(i){
-  g<-ggeffect(mm,terms=paste(i,"[n=100]"))
-  plot(g,add=TRUE,jitter=FALSE)+coord_cartesian(ylim = c(0, 500)) 
+  g<-ggpredict(mm,terms=paste(i,"[n=100]"))
+  plot(g,add=TRUE,jitter=FALSE)+coord_cartesian(ylim=c(0,20)) 
 })
 wrap_plots(gl,nrow=2)
+
+
+
+plot(pred[[1]])
+
+plot(water,border=NA,col="lightblue")
+plot(xs,cex=scales::rescale(xs$sp,to=c(0.5,10)),pch=ifelse(xs$sp==0,4,1),add=TRUE)
+
+
+
+
