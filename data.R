@@ -292,6 +292,16 @@ plot(ds,col=factor(ds$region))
 
 ### Show trap data ######################################
 
+####  Check some species
+
+i<-grep("SMG|STM|FIT|RIP",names(d))
+par(mfrow=c(2,2))
+lapply(i,function(j){
+  #hist(d[[names(d)[j]]],breaks=50,main=names(d)[j])
+  table(d[[names(d)[j]]]==0)
+})
+par(mfrow=c(1,1))
+
 #### By year ###########################################
 l<-split(ds[!ds$db%in%"map",],ds$year[!ds$db%in%"map"])
 par(mfrow=n2mfrow(length(l)),mar=c(0.25,0.25,0.25,0.25))

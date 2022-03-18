@@ -4,7 +4,7 @@ library(INLA)
 library(splines)
 
 
-load("CQP_model_selection.RData")
+load("SMG_model_selection.RData")
 
 # select the best model from the list
 model<-spmodels[[which.min(dics)]]
@@ -30,7 +30,7 @@ mfixed <- inla(fixed,data=cbind(y=xs$sp,xs@data),
                control.predictor=list(compute=TRUE,link=1), 
                #control.family=list(hyper=list(theta=prec.prior)), 
                control.fixed=control.fixed,
-               control.inla = list(strategy='gaussian',int.strategy = "eb"),
+               control.inla = list(strategy='auto',int.strategy = "eb"),
                num.threads="2:2",
                verbose=TRUE,
                control.compute=list(dic=TRUE,waic=FALSE,cpo=FALSE,config=TRUE),
@@ -42,7 +42,7 @@ m <- inla(model,data=inla.stack.data(stackfull),
           control.predictor=list(compute=TRUE, A=inla.stack.A(stackfull),link=1), 
           #control.family=list(hyper=list(theta=prec.prior)), 
           control.fixed=control.fixed,
-          control.inla = list(strategy='gaussian',int.strategy = "eb"),
+          control.inla = list(strategy='auto',int.strategy = "eb"),
           num.threads="2:2",
           verbose=TRUE,
           control.compute=list(dic=TRUE,waic=FALSE,cpo=FALSE,config=TRUE),
@@ -50,7 +50,7 @@ m <- inla(model,data=inla.stack.data(stackfull),
           family="nbinomial")#"zeroinflatednbinomial1"
 
 
-#### Posterior samples ####################################
+ #### Posterior samples ####################################
 
 # from haakon bakk a, BTopic112
 nsims<-500

@@ -27,14 +27,14 @@ lcc<-list(
     ~ urban50 + forest50 + urban1000+ forest1000
   ),
   CQP=list(
-    ~ agriculture50 + forest50,
-    ~ agriculture1000+ forest1000,
-    ~ agriculture50 + forest50 + agriculture1000+ forest1000
+    ~ urban50 + forest50,
+    ~ urban1000+ forest1000,
+    ~ urban50 + forest50 + urban1000+ forest1000
   ),
   SMG=list(
-    ~ agriculture50 + forest50,
-    ~ agriculture1000+ forest1000,
-    ~ agriculture50 + forest50 + agriculture1000+ forest1000
+    ~ urban50 + forest50,
+    ~ urban1000+ forest1000,
+    ~ urban50 + forest50 + urban1000+ forest1000
   )
 )
 
@@ -73,7 +73,7 @@ cat("\014")
 inla.setOption(inla.mode="experimental")
 year<-c(2003:2016);
 weeks<-10:50
-spcode<-c("VEX_","CPR_","CQP_","SMG_")[3] # change index to change species
+spcode<-c("VEX_","CPR_","CQP_","SMG_")[4] # change index to change species
 lweeks<-lapply(year,function(i){list(i,weeks)})
 #lweeks<-list(list(2014,weeks),list(2015,29:32))
 weeks<-apply(do.call("rbind",lapply(lweeks,function(i){expand.grid(year=i[[1]],week=i[[2]])})),1,function(i){paste(i[1],i[2],sep="_W")})
@@ -142,7 +142,7 @@ if(TRUE){
   xs2map<-xs2map[predmap,]
   plot(st_geometry(xs2map),add=TRUE)
   
-  set.seed(1234)
+  set.seed(12345) #1234
   xs3pts<-as(st_sample(st_as_sf(mappingzone),10000),"Spatial")
   xs2pts<-as(st_cast(predmap,"MULTIPOINT"),"Spatial")
   xs2<-as(xs2,"Spatial")
@@ -248,7 +248,9 @@ inla.pc.dgamma(x, lambda = 1, log = FALSE)
 #model <- y ~ -1 + intercept + jul + julsquare + forest50 + urban50 + urban1000 + agriculture1000  + tmax7 + tmax2 + prcp30 + f(spatial, model=spde, group=spatial.group,control.group=list(model='ar1', hyper=h.spec))
 
 # using knots allow to fix the values for each jul across newdata
-knots<-seq(min(xs$jul)+0.25,max(xs$jul)-0.25,length.out=9)
+knots<-seq(min(xs$jul)+0.15,max(xs$jul)-0.15,length.out=8)
+#knots<-c(-2.25,-1.25,0,1,2)
+#knots<-seq(-2.25,0,length.out=5)
 
 v<-setdiff(unique(unlist(lapply(unlist(models),all.vars))),c("y","spatial","intercept","spde","year","knots","lognights")) 
 

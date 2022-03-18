@@ -256,7 +256,7 @@ lapply(names(pred),function(i){
   #if(i%in%c("sd","mean")){
   if(i%in%quantities){
     zlim<-NULL # limits specific to graph
-    if(i %in% quantities[1:3] && TRUE){ # limits determined by CI if TRUE
+    if(i %in% quantities[1:3] && FALSE){ # limits determined by CI if TRUE
       zlim<-range(values(pred2[[quantities[1:3]]]),na.rm=TRUE) 
     }
     axis.args=list(at=frange(values(pred2[[i]])),labels=niceround(f(frange(values(pred2[[i]])))),cex.axis=0.8,lwd=0,tck=-0.2,mgp=c(3,0.3,0),lwd.ticks=1)
@@ -325,7 +325,7 @@ Amapmatrix<-as.matrix(Amap)
 
 #par(mfrow=n2mfrow(length(v1m),asp=3.5/2),mar=c(3,2,1,1),oma=c(0,10,0,0))
 #for(k in seq_along(v1m)){
-p<-lapply((1:nsims)[1:100],function(i){
+p<-lapply((1:nsims)[1:500],function(i){
   dat<-xsmap@data
   juls<-lp[["jul"]][which.min(abs(lp[["jul"]]$jul-dat$jul[1])),,drop=FALSE] # finds the closest jul value to get the corresponding spline basis
   dat<-cbind(dat,juls[,names(juls)%in%paste0("X",1:50)][rep(1,nrow(dat)),])
@@ -517,18 +517,19 @@ nweights<-grep("spatial",row.names(samples[[1]]$latent))
 Amapp<-inla.spde.make.A(mesh=mesh,loc=coordinates(xsmap)) 
 Amapmatrix<-as.matrix(Amapp)
 
-days<-c("06-06","06-08","06-10","06-12")
+#days<-c("06-05","06-07","06-09","06-11")
+days<-c("07-01")
 days<-as.integer(format(as.Date(paste(yearpred,days,sep="-")),"%j"))
 days<-(days-vscale$jul[["mean"]])/vscale$jul[["sd"]]
 
-lpr<-foreach(j=seq_along(days),.packages=c("raster")) %do% {
+lprr<-foreach(j=seq_along(days),.packages=c("raster")) %do% {
   juls<-lp[["jul"]][which.min(abs(lp[["jul"]]$jul-days[j])),,drop=FALSE]
   standardv<-names(nparams)[!names(nparams)%in%c("intercept","jul","julsquare",1:50)]
   dat<-as.matrix(xsmap@data[,standardv])
   dat<-cbind(dat,data.frame(jul=days[j],julsquare=days[j]^2)[rep(1,nrow(dat)),])
   dat<-cbind(dat,juls[,names(juls)%in%paste0("X",1:50)][rep(1,nrow(dat)),])
   dat<-cbind(intercept=1,dat)
-  p<-lapply((1:nsims)[1:20],function(i){
+  p<-lapply((1:nsims)[1:200],function(i){
     betas<-samples[[i]]$latent[nparams]
     names(betas)<-ifelse(names(nparams)%in%1:50,paste0("X",names(nparams)),names(nparams))
     fixed<-as.matrix(dat[,names(betas)]) %*% betas # make sure betas and vars are in the same order
@@ -552,7 +553,7 @@ lpr<-foreach(j=seq_along(days),.packages=c("raster")) %do% {
   pr
 }
 
-lpr<-lapply(lpr,rast)
+lpr<-lapply(lprr,rast)
 
 
 png(file.path("C:/Users/God/Downloads",paste0(spcode,".png")),width=13,height=8,units="in",res=300)
@@ -570,7 +571,7 @@ lapply(seq_along(lpr),function(i){
   xdate<-as.Date(format(as.Date(j,origin=paste0(yearpred,"-01-01")),"%Y-%m-%d"))
   at<-seq(min(values(log(lpr[[i]])),na.rm=TRUE),max(values(log(lpr[[i]])),na.rm=TRUE),length.out=5)
   #lab<-ifelse(round(exp(at),0)==0,round(exp(at),2),round(exp(at),0))
-  lab<-niceround(at)
+  lab<-niceround(exp(at))
   labels<-paste(lab,c("min pred. > 0",rep("",length(at)-2),"max pred."))
   plot(log(lpr[[i]]),range=log(zlim),col=cols,asp=1,axes=FALSE,bty="n",plg=list(at=at,labels=labels,cex=0.75))
   plot(st_geometry(water),border=NA,col="white",add=TRUE)
@@ -589,7 +590,7 @@ lapply(seq_along(lpr),function(i){
 
   mtext(side=4,line=-1,text="Number of mosquitos per trap (observed and predicted)",adj=0.5,cex=0.7)
   xp<-xmin(lpr[[1]])+((xmax(lpr[[1]])-xmin(lpr[[1]]))*c(0.85,0.85))
-  yp<-ymin(lpr[[1]])+((ymax(lpr[[1]])-ymin(lpr[[1]]))*c(1.1,1.05)) 
+  yp<-ymin(lpr[[1]])+((ymax(lpr[[1]])-ymin(lpr[[1]]))*c(1.05,1.025)) 
   points(xp,yp,pch=21,cex=1,bg=colobs[c(which.min(xxs$sp),which.max(xxs$sp))],col="grey10",lwd=0.4,xpd=TRUE)
   #text(xp,yp,label=,cex=0.7,col="grey10",adj=c(0.5,-1))
   text(xp,yp,label=paste(c("min obs.","max obs."),xxs$sp[c(which.min(xxs$sp),which.max(xxs$sp))]),cex=0.7,col="grey10",adj=c(1.2,0.5),xpd=TRUE)
