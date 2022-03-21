@@ -312,10 +312,10 @@ for(i in seq_along(v1)){
   le<-nrow(lp[[v1[i]]])
   if(le!=n){
     #AA<-inla.spde.make.A(mesh=mesh,loc=matrix(c(0.3,0.5),ncol=2)[rep(1,le),,drop=FALSE]) # for categorical variables
-    AA<-inla.spde.make.A(mesh=mesh,loc=matrix(c(580,5045),ncol=2)[rep(1,n),,drop=FALSE])
+    AA<-inla.spde.make.A(mesh=mesh,loc=matrix(c(565,5049),ncol=2)[rep(1,n),,drop=FALSE])
   }else{
     #AA<-Apn # for numerical variables
-    AA<-inla.spde.make.A(mesh=mesh,loc=matrix(c(580,5045),ncol=2)[rep(1,n),,drop=FALSE])
+    AA<-inla.spde.make.A(mesh=mesh,loc=matrix(c(565,5049),ncol=2)[rep(1,n),,drop=FALSE])
   }
   stack<-inla.stack(tag=v1[i],data=list(y=NA),A=list(AA,1),effects=list(c(iset,list(intercept=1)),lp[[v1[i]]][-1])) # -1 removes intercept in lp not ure if essential    
   stackfull<-inla.stack(stackfull,stack)
