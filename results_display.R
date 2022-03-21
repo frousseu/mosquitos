@@ -139,26 +139,32 @@ for(k in seq_along(v1m)){
     #}else{
     spatial<-as.matrix(AA) %*% wk # stack was Apn in fire
     #}
-    p<-fixed+spatial
+    p1<-fixed
+    p2<-fixed+spatial
     #p<-fixed # ignores spatial part
-    p
+    list(p1,p2)
   })
-  p<-do.call("cbind",p)
-  p<-t(apply(p,1,function(i){c(quantile(i,0.0275),mean(i),quantile(i,0.975))}))
-  p<-exp(p)
+  p1<-do.call("cbind",lapply(p,"[[",1))
+  p2<-do.call("cbind",lapply(p,"[[",2))
+  p1<-t(apply(p1,1,function(i){c(quantile(i,0.0275),mean(i),quantile(i,0.975))}))
+  p2<-t(apply(p2,1,function(i){c(quantile(i,0.0275),mean(i),quantile(i,0.975))}))
+  p1<-exp(p1)
+  p2<-exp(p2)
   if(nrow(lp[[v1m[k]]])==n){
     vals<-bscale(lp[[v1m[k]]][,v1m[k]],v=v1m[k])
     if(TRUE){ # log y scale or not
       plot(bscale(xs@data[,v1m[k]],v=v1m[k]),xs$sp+1,xlab=v1m[k],font=2,ylab="",yaxt="n",pch=16,col=gray(0,0.05),mgp=c(1.5,0.45,0),log="y")
-      lines(vals,p[,2]+1,lwd=2,col=gray(0,0.8))
-      polygon(c(vals,rev(vals),vals[1]),c(p[,1],rev(p[,3]),p[,1][1])+1,col=alpha("black",0.1),border=NA)
+      polygon(c(vals,rev(vals),vals[1]),c(p2[,1],rev(p2[,3]),p2[,1][1])+1,col=alpha("black",0.1),border=NA)
+      polygon(c(vals,rev(vals),vals[1]),c(p1[,1],rev(p1[,3]),p1[,1][1])+1,col=alpha("black",0.2),border=NA)
+      #lines(vals,p2[,2]+1,lwd=1,col=gray(0,0.8))
+      lines(vals,p1[,2]+1,lwd=1,col=gray(0,0.8))
       at<-c(1,6,11,51,101,501,1001,5001,10001,max(xs$sp)+1)
       axis(2,at=at,label=at-1,mgp=c(2,0.45,0),tcl=-0.3,las=2,font=2)
     }else{
-      plot(vals,p[,2],type="l",ylim=c(0,min(c(max(p[,3]),max(xs$sp))))*1.3,xlab=v1m[k],font=2,ylab="",lty=1,yaxt="n",mgp=c(1.5,0.45,0),tcl=-0.3)
+      plot(vals,p1[,2],type="l",ylim=c(0,min(c(max(p1[,3]),max(xs$sp))))*1.3,xlab=v1m[k],font=2,ylab="",lty=1,yaxt="n",mgp=c(1.5,0.45,0),tcl=-0.3)
       points(bscale(xs@data[,v1m[k]],v=v1m[k]),xs$sp,pch=1,col=gray(0,0.1))
-      lines(vals,p[,2],lwd=2,col=gray(0,0.8))
-      polygon(c(vals,rev(vals),vals[1]),c(p[,1],rev(p[,3]),p[,1][1]),col=alpha("black",0.1),border=NA)
+      lines(vals,p1[,2],lwd=2,col=gray(0,0.8))
+      polygon(c(vals,rev(vals),vals[1]),c(p1[,1],rev(p1[,3]),p1[,1][1]),col=alpha("black",0.1),border=NA)
       axis(2,las=2,font=2)
     }
   }else{
