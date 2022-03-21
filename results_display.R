@@ -11,7 +11,7 @@ Sys.setlocale("LC_ALL","English")
 
 ## RESULTS ##################################################
 
-load("CQP_model_outputs.RData")
+load("VEX_model_outputs.RData")
 
 ls()[sapply(ls(),function(i){
   obj<-paste0("\\b",i,"\\b")
@@ -124,7 +124,9 @@ nweights<-grep("spatial",row.names(samples[[1]]$latent))
 
 v1m<-c("jul",v1[v1%in%row.names(m$summary.fixed)])
 
-par(mfrow=n2mfrow(length(v1m),asp=3.45/2),mar=c(3,2,1,1),oma=c(0,10,0,0))
+png(file.path("C:/Users/God/Downloads",paste0(spcode,"marginal_effects.png")),width=12,height=8,units="in",res=300,pointsize=11)
+
+par(mfrow=n2mfrow(length(v1m),asp=3.45/2),mar=c(3,2.5,1,1),oma=c(0,10,0,0))
 for(k in seq_along(v1m)){
   p<-lapply(1:nsims,function(i){
     betas<-samples[[i]]$latent[nparams]
@@ -137,8 +139,8 @@ for(k in seq_along(v1m)){
     #}else{
     spatial<-as.matrix(AA) %*% wk # stack was Apn in fire
     #}
-    #p<-fixed+spatial
-    p<-fixed # ignores spatial part
+    p<-fixed+spatial
+    #p<-fixed # ignores spatial part
     p
   })
   p<-do.call("cbind",p)
@@ -146,49 +148,70 @@ for(k in seq_along(v1m)){
   p<-exp(p)
   if(nrow(lp[[v1m[k]]])==n){
     vals<-bscale(lp[[v1m[k]]][,v1m[k]],v=v1m[k])
-    #if(v1m[k]%in%c("wetland50","wetland1000")){vals<-exp(vals)-0.5}
-    plot(vals,p[,2],type="l",ylim=c(0,min(c(max(p[,3]),max(xs$sp))))*1.3,xlab=v1m[k],font=2,ylab="",lty=1,yaxt="n",mgp=c(2,0.45,0),tcl=-0.3)
-    points(bscale(xs@data[,v1m[k]],v=v1m[k]),xs$sp,pch=1,col=gray(0,0.1))
-    lines(vals,p[,2],lwd=3,col=gray(0,0.8))
-    #lines(vals,p[,1],lty=3)
-    #lines(vals,p[,3],lty=3)
-    polygon(c(vals,rev(vals),vals[1]),c(p[,1],rev(p[,3]),p[,1][1]),col=alpha("black",0.1),border=NA)
+    if(TRUE){ # log y scale or not
+      plot(bscale(xs@data[,v1m[k]],v=v1m[k]),xs$sp+1,xlab=v1m[k],font=2,ylab="",yaxt="n",pch=16,col=gray(0,0.05),mgp=c(1.5,0.45,0),log="y")
+      lines(vals,p[,2]+1,lwd=2,col=gray(0,0.8))
+      polygon(c(vals,rev(vals),vals[1]),c(p[,1],rev(p[,3]),p[,1][1])+1,col=alpha("black",0.1),border=NA)
+      at<-c(1,6,11,51,101,501,1001,5001,10001,max(xs$sp)+1)
+      axis(2,at=at,label=at-1,mgp=c(2,0.45,0),tcl=-0.3,las=2,font=2)
+    }else{
+      plot(vals,p[,2],type="l",ylim=c(0,min(c(max(p[,3]),max(xs$sp))))*1.3,xlab=v1m[k],font=2,ylab="",lty=1,yaxt="n",mgp=c(1.5,0.45,0),tcl=-0.3)
+      points(bscale(xs@data[,v1m[k]],v=v1m[k]),xs$sp,pch=1,col=gray(0,0.1))
+      lines(vals,p[,2],lwd=2,col=gray(0,0.8))
+      polygon(c(vals,rev(vals),vals[1]),c(p[,1],rev(p[,3]),p[,1][1]),col=alpha("black",0.1),border=NA)
+      axis(2,las=2,font=2)
+    }
   }else{
     #plot(unique(sort(size[,v[k]])),p[,2],type="l",ylim=c(0,100),xlab=v[k],font=2,ylab="",lty=1,yaxt="n")
     #points(jitter(as.integer(size[,v[k]])),size$tTotal,pch=16,col=gray(0,0.1))
     #segments(x0=as.integer(unique(sort(size[,v[k]]))),x1=as.integer(unique(sort(size[,v[k]]))),y0=p[,1],y1=p[,3],lty=3)
   }
-  axis(2,las=2)
+  
 }
-mtext(paste("Mosquitos per trap"),outer=TRUE,cex=1.2,side=2,xpd=TRUE,line=2)
+mtext(paste("No. of mosquitos per trap"),outer=TRUE,cex=1.2,side=2,xpd=TRUE,line=2)
 
+dev.off()
+file.show(file.path("C:/Users/God/Downloads",paste0(spcode,"marginal_effects.png")))
 
 #### Marginal effects with spatial uncertainty ##########################
 
 # this section is not that useful because it is a prediction for a given location, hence it includes uncertainty in the spatial field
 
-par(mfrow=n2mfrow(length(v1m),asp=1.5),mar=c(3,3,1,1),oma=c(0,10,0,0))
-for(i in seq_along(v1m)){
-  p<-m$summary.fitted.values[index[[v1m[i]]],c("0.025quant","0.5quant","0.975quant")]
-  #p[]<-lapply(p,transI)
-  dat<-data.frame(lp[[v1m[i]]])
-  if(nrow(p)==n){
-    vals<-bscale(dat[[v1m[i]]],v=v1m[i])
-    plot(vals,p[,2],type="l",ylim=c(0,min(c(max(p[,3]),max(xs$sp)))),xlab=v1m[i],font=2,ylab="",lty=1,yaxt="n",mgp=c(2,0.45,0),tcl=-0.3)
-    #plot(dat[[v1m[i]]],p[,2],type="l",ylim=c(0,300),xlab=v1m[i],font=2,ylab="",lty=1,yaxt="n",mgp=c(2,0.45,0),tcl=-0.3)
-    #lines(vals,p[,1],lty=3,lwd=1)
-    #lines(vals,p[,3],lty=3,lwd=1)
-    points(bscale(xs@data[,v1m[i]],v=v1m[i]),xs$sp,pch=16,col=gray(0,0.07))
-    polygon(c(vals,rev(vals),vals[1]),c(p[,1],rev(p[,3]),p[,1][1]),col=alpha("black",0.1),border=NA)
-  }else{
-    #plot(unique(sort(size[,v1m[i]])),p[,2],type="l",ylim=c(0,100),xlab=v1m[i],font=2,ylab="",lty=1,yaxt="n")
-    #segments(x0=as.integer(unique(sort(size[,v[i]]))),x1=as.integer(unique(sort(size[,v[i]]))),y0=p[,1],y1=p[,3],lty=3,lwd=2)
-    #points(jitter(as.integer(size[,v[i]]),fac=2),transI(size$tTotal),pch=16,col=gray(0,0.07))
-  }
-  axis(2,las=2)
-}
-mtext("Weekly number of mosquitos",outer=TRUE,cex=1.2,side=2,xpd=TRUE,line=2)
+png(file.path("C:/Users/God/Downloads",paste0(spcode,"marginal_effects_spatial.png")),width=12,height=8,units="in",res=300,pointsize=11)
 
+par(mfrow=n2mfrow(length(v1m),asp=1.5),mar=c(3,2.5,1,1),oma=c(0,10,0,0))
+for(k in seq_along(v1m)){
+  p<-m$summary.fitted.values[index[[v1m[k]]],c("0.025quant","0.5quant","0.975quant")]
+  #p[]<-lapply(p,transI)
+  dat<-data.frame(lp[[v1m[k]]])
+  if(nrow(p)==n){
+    vals<-bscale(dat[[v1m[k]]],v=v1m[k])
+    if(TRUE){ # log y scale or not
+      plot(bscale(xs@data[,v1m[k]],v=v1m[k]),xs$sp+1,xlab=v1m[k],font=2,ylab="",yaxt="n",pch=16,col=gray(0,0.05),mgp=c(1.5,0.45,0),log="y")
+      lines(vals,p[,2]+1,lwd=2,col=gray(0,0.8))
+      polygon(c(vals,rev(vals),vals[1]),c(p[,1],rev(p[,3]),p[,1][1])+1,col=alpha("black",0.1),border=NA)
+      at<-c(1,6,11,51,101,501,1001,5001,10001,max(xs$sp)+1)
+      axis(2,at=at,label=at-1,mgp=c(2,0.45,0),tcl=-0.3,las=2,font=2)
+    }else{
+      plot(vals,p[,2],type="l",ylim=c(0,min(c(max(p[,3]),max(xs$sp)))),xlab=v1m[k],font=2,ylab="",lty=1,yaxt="n",mgp=c(1.5,0.45,0),tcl=-0.3)
+      #plot(dat[[v1m[k]]],p[,2],type="l",ylim=c(0,300),xlab=v1m[k],font=2,ylab="",lty=1,yaxt="n",mgp=c(2,0.45,0),tcl=-0.3)
+      #lines(vals,p[,1],lty=3,lwd=1)
+      #lines(vals,p[,3],lty=3,lwd=1)
+      points(bscale(xs@data[,v1m[k]],v=v1m[k]),xs$sp,pch=16,col=gray(0,0.07))
+      polygon(c(vals,rev(vals),vals[1]),c(p[,1],rev(p[,3]),p[,1][1]),col=alpha("black",0.1),border=NA)
+      axis(2,las=2,font=2)
+    }
+  }else{
+    #plot(unique(sort(size[,v1m[k]])),p[,2],type="l",ylim=c(0,100),xlab=v1m[k],font=2,ylab="",lty=1,yaxt="n")
+    #segments(x0=as.integer(unique(sort(size[,v[k]]))),x1=as.integer(unique(sort(size[,v[k]]))),y0=p[,1],y1=p[,3],lty=3,lwd=2)
+    #points(jitter(as.integer(size[,v[k]]),fac=2),transI(size$tTotal),pch=16,col=gray(0,0.07))
+  }
+  
+}
+mtext("No. of mosquitos per trap",outer=TRUE,cex=1.2,side=2,xpd=TRUE,line=2)
+
+dev.off()
+file.show(file.path("C:/Users/God/Downloads",paste0(spcode,"marginal_effects_spatial.png")))
 
 #### Map predictions ####################################
 
@@ -226,7 +249,7 @@ colssd<-rev(cividis(200))
 colsfield<-colo.scale(seq(range(values(pred[["mean.spatial.field"]]),na.rm=TRUE)[1],range(values(pred[["mean.spatial.field"]]),na.rm=TRUE)[2],length.out=200),c("darkblue","steelblue","ivory3","firebrick3","firebrick4"),center=TRUE)#,"grey20"))
 
 titles<-c("Mean","CI 2.5%","CI 97.5%","SD","Mean Spatial Field","SD Spatial Field")
-legtitles<-c("Nb. of Mosquitos / trap","Nb. of Mosquitos / trap","Nb. of Mosquitos / trap","Nb. of Mosquitos / trap (on the link scale)","Nb. of Mosquitos / trap (on the link scale)","Nb. of Mosquitos / trap (on the link scale)")
+legtitles<-c("No. of Mosquitos / trap","No. of Mosquitos / trap","No. of Mosquitos / trap","No. of Mosquitos / trap (on the link scale)","No. of Mosquitos / trap (on the link scale)","No. of Mosquitos / trap (on the link scale)")
 names(titles)<-names(pred)
 names(legtitles)<-names(pred)  
 
