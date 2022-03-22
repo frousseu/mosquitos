@@ -2,6 +2,9 @@
 library(RcppArmadillo)
 library(Rcpp)
 library(matrixStats)
+library(knitr)
+library(kableExtra)
+library(webshot)
 
 options(device = "X11")
 grDevices::windows.options(record=TRUE)
@@ -11,7 +14,7 @@ Sys.setlocale("LC_ALL","English")
 
 ## RESULTS ##################################################
 
-load("VEX_model_outputs.RData")
+load("SMG_model_outputs.RData")
 
 ls()[sapply(ls(),function(i){
   obj<-paste0("\\b",i,"\\b")
@@ -41,19 +44,44 @@ niceround<-function(x){
   sapply(res,as.character)
 }
 
+getlabels<-function(x){
+  v<-c(jul="Date", agriculture50="% of agriculture within 50 m", forest50="% of forests within 50 m", anom2="Mean temperature anomalies in previous 2 days (\u00B0C)", prcp2="Mean daily precipitations in previous 2 days (mm)", agriculture1000="% of agriculture within 1 km", 
+    forest1000="% of forests within 1 km", anom7="Mean temperature anomalies in previous 7 days (\u00B0C)", prcp7="Mean daily precipitations in previous 7 days (mm)", anom30="Mean temperature anomalies in previous 30 days (\u00B0C)", prcp30="Mean daily precipitations in previous 30 days (mm)", anom90="Mean temperature anomalies in previous 90 days (\u00B0C)", 
+    prcp90="Mean daily precipitations in previous 90 days (mm)", urban50="% of urban within 50 m", urban1000="% of urban within 1 km")
+  #print(v)
+  paste(v[match(x,names(v))],x,sep=" - ")
+}
+
+# this determines the order of variables presented
+ov<-c("jul","anom2","anom7","anom30","anom90","prcp2","prcp7","prcp30","prcp90","agriculture50","agriculture1000","forest50","forest1000","urban50","urban1000","spatial")
+
 #### DIC ####################################################
 
-dics<-c(dics,mfixed$dic$dic)
-delta_dics<-dics-min(dics)
+msel<-c(dics,mfixed$dic$dic)
+delta_dics<-round(msel-min(msel),2)
 mods<-sapply(c(spmodels,fixed),function(i){
   av<-all.vars(i)
-  paste(av[!av%in%c("y","jul","knots","lognights","spde")],collapse=" + ")
+  av<-av[order(match(av,ov))]
+  paste(av[!av%in%c("y","knots","lognights","spde")],collapse=" + ")
 })
 resdics<-data.frame(mods,delta_dics)
-
-
 resdics<-resdics[order(resdics$delta_dics),]
-resdics
+resdics$Model<-row.names(resdics)
+resdics$Model[nrow(resdics)]<-paste0(spcode,"0")
+names(resdics)<-c("Variables","\u0394DIC","Model")
+resdics<-resdics[,c(3,1,2)]
+
+resdics %>%
+  kbl(row.names = FALSE) %>%
+  kable_classic(full_width = FALSE, html_font = "Arial") %>% 
+  row_spec(0, bold = T, background = "#EEEEEE",align="c") %>% 
+  #kable_styling(full_width = FALSE, font_size = 12) %>% 
+  save_kable(file = file.path("C:/Users/God/Downloads",paste0(spcode,"_dics.png")),density=500)
+file.show(file.path("C:/Users/God/Downloads",paste0(spcode,"_dics.png")))
+
+
+
+
 
 #### Show posteriors ########################################
 
@@ -123,10 +151,11 @@ nparams<-sapply(params,function(i){
 nweights<-grep("spatial",row.names(samples[[1]]$latent))
 
 v1m<-c("jul",v1[v1%in%row.names(m$summary.fixed)])
+v1m<-v1m[order(match(v1m,ov))]
 
-png(file.path("C:/Users/God/Downloads",paste0(spcode,"marginal_effects.png")),width=12,height=8,units="in",res=300,pointsize=11)
+png(file.path("C:/Users/God/Downloads",paste0(spcode,"marginal_effects.png")),width=10,height=8,units="in",res=300,pointsize=11)
 
-par(mfrow=n2mfrow(length(v1m),asp=3.45/2),mar=c(3,2.5,1,1),oma=c(0,10,0,0))
+par(mfrow=n2mfrow(length(v1m),asp=3.45/2),mar=c(3,2.5,1,1),oma=c(4,4,0,0))
 for(k in seq_along(v1m)){
   p<-lapply(1:nsims,function(i){
     betas<-samples[[i]]$latent[nparams]
@@ -153,17 +182,26 @@ for(k in seq_along(v1m)){
   if(nrow(lp[[v1m[k]]])==n){
     vals<-bscale(lp[[v1m[k]]][,v1m[k]],v=v1m[k])
     if(TRUE){ # log y scale or not
-      plot(bscale(xs@data[,v1m[k]],v=v1m[k]),xs$sp+1,xlab=v1m[k],font=2,ylab="",yaxt="n",pch=16,col=gray(0,0.05),mgp=c(1.5,0.45,0),log="y")
-      polygon(c(vals,rev(vals),vals[1]),c(p2[,1],rev(p2[,3]),p2[,1][1])+1,col=alpha("black",0.1),border=NA)
-      polygon(c(vals,rev(vals),vals[1]),c(p1[,1],rev(p1[,3]),p1[,1][1])+1,col=alpha("black",0.2),border=NA)
-      #lines(vals,p2[,2]+1,lwd=1,col=gray(0,0.8))
-      lines(vals,p1[,2]+1,lwd=1,col=gray(0,0.8))
+      if(v1m[k]=="jul"){xlim<-c(135-13,288+8)}else{xlim<-NULL}
+      plot(bscale(xs@data[,v1m[k]],v=v1m[k]),xs$sp+1,xlab=getlabels(v1m[k]),font=2,ylab="",yaxt="n",xaxt="n",pch=16,col=gray(0.5,0.2),log="y",xlim=xlim,mgp=c(1.5,0.45,0))
+      polygon(c(vals,rev(vals),vals[1]),c(p2[,1],rev(p2[,3]),p2[,1][1])+1,col=alpha("green4",0.15),border=NA)
+      polygon(c(vals,rev(vals),vals[1]),c(p1[,1],rev(p1[,3]),p1[,1][1])+1,col=alpha("green4",0.25),border=NA)
+      #lines(vals,p2[,2]+1,lwd=1.5,col="red")
+      lines(vals,p1[,2]+1,lwd=1.5,col="darkgreen")
       at<-c(1,6,11,51,101,501,1001,5001,10001,max(xs$sp)+1)
-      axis(2,at=at,label=at-1,mgp=c(2,0.45,0),tcl=-0.3,las=2,font=2)
+      axis(2,at=at,label=at-1,mgp=c(2,0.45,0),tcl=-0.2,las=2,font=2,cex.axis=1,gap.axis=0)
+      if(v1m[k]=="jul"){
+        labd<-paste0("2021-",c("05-01","06-01","07-01","08-01","09-01","10-01","11-01"))
+        at<-as.integer(format(as.Date(labd),"%j"))
+        lab<-format(as.Date(labd),"%b-%d")
+        axis(1,at=at,labels=lab,mgp=c(1.5,0.45,0),font=2,tcl=-0.2)
+      }else{
+        axis(1,mgp=c(1.5,0.45,0),font=2,tcl=-0.2)
+      }
     }else{
       plot(vals,p1[,2],type="l",ylim=c(0,min(c(max(p1[,3]),max(xs$sp))))*1.3,xlab=v1m[k],font=2,ylab="",lty=1,yaxt="n",mgp=c(1.5,0.45,0),tcl=-0.3)
       points(bscale(xs@data[,v1m[k]],v=v1m[k]),xs$sp,pch=1,col=gray(0,0.1))
-      lines(vals,p1[,2],lwd=2,col=gray(0,0.8))
+      lines(vals,p1[,2],lwd=1.5)
       polygon(c(vals,rev(vals),vals[1]),c(p1[,1],rev(p1[,3]),p1[,1][1]),col=alpha("black",0.1),border=NA)
       axis(2,las=2,font=2)
     }
@@ -174,7 +212,8 @@ for(k in seq_along(v1m)){
   }
   
 }
-mtext(paste("No. of mosquitos per trap"),outer=TRUE,cex=1.2,side=2,xpd=TRUE,line=2)
+mtext(paste("No. of mosquitos per trap"),outer=TRUE,cex=1.2,side=2,xpd=TRUE,line=1)
+mtext(paste("Explanatory variables"),outer=TRUE,cex=1.2,side=1,xpd=TRUE,line=1)
 
 dev.off()
 file.show(file.path("C:/Users/God/Downloads",paste0(spcode,"marginal_effects.png")))
@@ -194,12 +233,12 @@ for(k in seq_along(v1m)){
     vals<-bscale(dat[[v1m[k]]],v=v1m[k])
     if(TRUE){ # log y scale or not
       plot(bscale(xs@data[,v1m[k]],v=v1m[k]),xs$sp+1,xlab=v1m[k],font=2,ylab="",yaxt="n",pch=16,col=gray(0,0.05),mgp=c(1.5,0.45,0),log="y")
-      lines(vals,p[,2]+1,lwd=2,col=gray(0,0.8))
+      lines(vals,p[,2]+1,lwd=1.5)
       polygon(c(vals,rev(vals),vals[1]),c(p[,1],rev(p[,3]),p[,1][1])+1,col=alpha("black",0.1),border=NA)
       at<-c(1,6,11,51,101,501,1001,5001,10001,max(xs$sp)+1)
       axis(2,at=at,label=at-1,mgp=c(2,0.45,0),tcl=-0.3,las=2,font=2)
     }else{
-      plot(vals,p[,2],type="l",ylim=c(0,min(c(max(p[,3]),max(xs$sp)))),xlab=v1m[k],font=2,ylab="",lty=1,yaxt="n",mgp=c(1.5,0.45,0),tcl=-0.3)
+      plot(vals,p[,2],type="l",ylim=c(0,min(c(max(p[,3]),max(xs$sp)))),xlab=v1m[k],font=2,ylab="",lty=1,yaxt="n",mgp=c(1.5,0.45,0),tcl=-0.3,lwd=1.5)
       #plot(dat[[v1m[k]]],p[,2],type="l",ylim=c(0,300),xlab=v1m[k],font=2,ylab="",lty=1,yaxt="n",mgp=c(2,0.45,0),tcl=-0.3)
       #lines(vals,p[,1],lty=3,lwd=1)
       #lines(vals,p[,3],lty=3,lwd=1)
@@ -585,7 +624,7 @@ lprr<-foreach(j=seq_along(days),.packages=c("raster")) %do% {
 lpr<-lapply(lprr,rast)
 
 
-png(file.path("C:/Users/God/Downloads",paste0(spcode,".png")),width=13,height=8,units="in",res=300)
+png(file.path("C:/Users/God/Downloads",paste0(spcode,"color_obs.png")),width=13,height=8,units="in",res=300)
 par(mfrow=n2mfrow(length(days),asp=3.5/2),mar=c(0,0,3,0),oma=c(0,0,0,0))
 
 jul<-round(days*vscale[["jul"]]["sd"]+vscale[["jul"]]["mean"],0)
@@ -627,7 +666,7 @@ lapply(seq_along(lpr),function(i){
   
 })
 dev.off()
-file.show(file.path("C:/Users/God/Downloads",paste0(spcode,".png")))
+file.show(file.path("C:/Users/God/Downloads",paste0(spcode,"color_obs.png")))
 
 #### Model checks ##############################################
 
@@ -731,12 +770,14 @@ library(ggeffects)
 dat<-xs@data[xs$db!="map",]
 dat$y<-as.integer(dat$sp>0)
 
-mm<-glmmTMB(sp ~ ns(jul,knots=knots) + agriculture50 + forest50 + agriculture1000 + forest1000 + anom2 + prcp2 + anom30 + prcp30 + offset(lognights), ziformula=~1, data=dat,family=nbinom2())
+knots<-seq(min(xs$jul)+0.05,max(xs$jul)-0.05,length.out=8)
+
+mm<-glmmTMB(sp ~ 0 + ns(jul,knots=knots) + agriculture50 + forest50 + agriculture1000 + forest1000 + anom2 + prcp2 + anom30 + prcp30 + offset(lognights), ziformula=~0, data=dat,family=nbinom2())
 
 #mm<-glmmTMB(y ~ ns(jul,knots=knots) + agriculture50 + forest50 + agriculture1000 + forest1000 + anom2 + prcp2 + anom30 + prcp30 + offset(lognights), ziformula=~0, data=dat,family=binomial())
 
-plot(lp$jul$jul,predict(mm,newdata=cbind(lp$jul,lognights=0),type="response"),type="l",ylim=c(0,50))
-points(dat$jul,dat$sp)
+plot(dat$jul,dat$sp+1,log="y",pch=16,col=gray(0,0.05))
+lines(lp$jul$jul,predict(mm,newdata=cbind(lp$jul,lognights=0),type="response")+1)
 abline(v=knots,lty=3)
 
 #mm<-gam(sp ~ poly(jul,3) + agriculture50 + forest50 + agriculture1000 + forest1000 + anom2 + prcp2 + anom30 + prcp30 + offset(lognights), data=dat,family="nb")
