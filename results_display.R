@@ -14,7 +14,7 @@ Sys.setlocale("LC_ALL","English")
 
 ## RESULTS ##################################################
 
-load("SMG_model_outputs.RData")
+load("CPR_model_outputs.RData")
 
 ls()[sapply(ls(),function(i){
   obj<-paste0("\\b",i,"\\b")
@@ -73,14 +73,21 @@ resdics<-resdics[,c(3,1,2)]
 
 resdics %>%
   kbl(row.names = FALSE) %>%
-  kable_classic(full_width = FALSE, html_font = "Arial") %>% 
+  kable_classic(full_width = FALSE, html_font = "Helvetica") %>% 
   row_spec(0, bold = T, background = "#EEEEEE",align="c") %>% 
   #kable_styling(full_width = FALSE, font_size = 12) %>% 
-  save_kable(file = file.path("C:/Users/God/Downloads",paste0(spcode,"_dics.png")),density=500)
-file.show(file.path("C:/Users/God/Downloads",paste0(spcode,"_dics.png")))
+  save_kable(file = file.path("C:/Users/God/Downloads",paste0(spcode,"dics.png")),density=500)
+file.show(file.path("C:/Users/God/Downloads",paste0(spcode,"dics.png")))
 
-
-
+#resdics %>%
+#  kbl(row.names = FALSE) %>%
+#  kable_classic(full_width = FALSE, html_font = "Helvetica") %>%
+#  kable_styling(latex_options = c("striped", "scale_down")) %>%
+#  row_spec(0, bold = T, background = "#EEEEEE",align="c") %>% 
+#  #kable_styling(full_width = FALSE, font_size = 12) %>% 
+#  #as_image()
+#  save_kable(file = file.path("C:/Users/God/Downloads",paste0(spcode,"dics.png")),density=500)
+#file.show(file.path("C:/Users/God/Downloads",paste0(spcode,"dics.png")))
 
 
 #### Show posteriors ########################################
@@ -324,7 +331,7 @@ lapply(names(pred),function(i){
   #if(i%in%c("sd","mean")){
   if(i%in%quantities){
     zlim<-NULL # limits specific to graph
-    if(i %in% quantities[1:3] && FALSE){ # limits determined by CI if TRUE
+    if(i %in% quantities[1:3] && TRUE){ # limits determined by CI if TRUE
       zlim<-range(values(pred2[[quantities[1:3]]]),na.rm=TRUE) 
     }
     axis.args=list(at=frange(values(pred2[[i]])),labels=niceround(f(frange(values(pred2[[i]])))),cex.axis=0.8,lwd=0,tck=-0.2,mgp=c(3,0.3,0),lwd.ticks=1)
@@ -767,18 +774,25 @@ library(patchwork)
 library(ggplot2)
 library(ggeffects)
 
+load("CQP_model_outputs.RData")
+
 dat<-xs@data[xs$db!="map",]
 dat$y<-as.integer(dat$sp>0)
 
-knots<-seq(min(xs$jul)+0.05,max(xs$jul)-0.05,length.out=8)
+knots1<-knots
+boundary<-NULL
+knots<-seq(min(xs$jul)+0.50,max(xs$jul)-0.50,length.out=5)
+boundary<-c(min(xs$jul)+0.10,max(xs$jul)-0.10)
 
-mm<-glmmTMB(sp ~ 0 + ns(jul,knots=knots) + agriculture50 + forest50 + agriculture1000 + forest1000 + anom2 + prcp2 + anom30 + prcp30 + offset(lognights), ziformula=~0, data=dat,family=nbinom2())
+mm<-glmmTMB(sp ~ 0 + ns(jul,knots=knots,Boundary=boundary) + agriculture50 + forest50 + agriculture1000 + forest1000 + anom2 + prcp2 + anom30 + prcp30 + offset(lognights), ziformula=~0, data=dat,family=nbinom2())
 
 #mm<-glmmTMB(y ~ ns(jul,knots=knots) + agriculture50 + forest50 + agriculture1000 + forest1000 + anom2 + prcp2 + anom30 + prcp30 + offset(lognights), ziformula=~0, data=dat,family=binomial())
 
 plot(dat$jul,dat$sp+1,log="y",pch=16,col=gray(0,0.05))
 lines(lp$jul$jul,predict(mm,newdata=cbind(lp$jul,lognights=0),type="response")+1)
 abline(v=knots,lty=3)
+abline(v=boundary,lty=3,col="red")
+
 
 #mm<-gam(sp ~ poly(jul,3) + agriculture50 + forest50 + agriculture1000 + forest1000 + anom2 + prcp2 + anom30 + prcp30 + offset(lognights), data=dat,family="nb")
 
