@@ -5,6 +5,8 @@ library(matrixStats)
 library(knitr)
 library(kableExtra)
 library(webshot)
+library(png)
+library(grid)
 
 options(device = "X11")
 grDevices::windows.options(record=TRUE)
@@ -67,16 +69,20 @@ mods<-sapply(c(spmodels,fixed),function(i){
 resdics<-data.frame(mods,delta_dics)
 resdics<-resdics[order(resdics$delta_dics),]
 resdics$Model<-row.names(resdics)
-resdics$Model[nrow(resdics)]<-paste0(spcode,"0")
+resdics$Model[nrow(resdics)]<-resdics$Model[1]
+resdics$Model<-paste0(substr(resdics$Model,1,3),formatC(as.integer(sapply(strsplit(resdics$Model,"_"),"[",2)),width=2,flag="0",format="d"))
+resdics$Model[nrow(resdics)]<-paste0(resdics$Model[nrow(resdics)],"nonspatial")
+
 names(resdics)<-c("Variables","\u0394DIC","Model")
+resdics$Variables<-gsub("jul","ns(jul)",resdics$Variables)
 resdics<-resdics[,c(3,1,2)]
 
 resdics %>%
   kbl(row.names = FALSE) %>%
   kable_classic(full_width = FALSE, html_font = "Helvetica") %>% 
-  row_spec(0, bold = T, background = "#EEEEEE",align="c") %>% 
+  row_spec(0, bold = T, background = "#EEEEEE",align="l") %>% 
   #kable_styling(full_width = FALSE, font_size = 12) %>% 
-  save_kable(file = file.path("C:/Users/God/Downloads",paste0(spcode,"dics.png")),density=500)
+  save_kable(file = file.path("C:/Users/God/Downloads",paste0(spcode,"dics.png")),density=500,zoom=2)
 file.show(file.path("C:/Users/God/Downloads",paste0(spcode,"dics.png")))
 
 #resdics %>%
@@ -191,10 +197,10 @@ for(k in seq_along(v1m)){
     if(TRUE){ # log y scale or not
       if(v1m[k]=="jul"){xlim<-c(135-13,288+8)}else{xlim<-NULL}
       plot(bscale(xs@data[,v1m[k]],v=v1m[k]),xs$sp+1,xlab=getlabels(v1m[k]),font=2,ylab="",yaxt="n",xaxt="n",pch=16,col=gray(0.5,0.2),log="y",xlim=xlim,mgp=c(1.5,0.45,0))
-      polygon(c(vals,rev(vals),vals[1]),c(p2[,1],rev(p2[,3]),p2[,1][1])+1,col=alpha("green4",0.15),border=NA)
-      polygon(c(vals,rev(vals),vals[1]),c(p1[,1],rev(p1[,3]),p1[,1][1])+1,col=alpha("green4",0.25),border=NA)
-      #lines(vals,p2[,2]+1,lwd=1.5,col="red")
-      lines(vals,p1[,2]+1,lwd=1.5,col="darkgreen")
+      polygon(c(vals,rev(vals),vals[1]),c(p2[,1],rev(p2[,3]),p2[,1][1])+1,col=alpha("green4",0.25),border=NA)
+      polygon(c(vals,rev(vals),vals[1]),c(p1[,1],rev(p1[,3]),p1[,1][1])+1,col=alpha("green4",0.35),border=NA)
+      #lines(vals,p2[,2]+1,lwd=1,col="red")
+      lines(vals,p1[,2]+1,lwd=1,col="darkgreen")
       at<-c(1,6,11,51,101,501,1001,5001,10001,max(xs$sp)+1)
       axis(2,at=at,label=at-1,mgp=c(2,0.45,0),tcl=-0.2,las=2,font=2,cex.axis=1,gap.axis=0)
       if(v1m[k]=="jul"){
@@ -745,6 +751,48 @@ plot(res$marginals.range.nominal[[1]],
 plot(inla.tmarginal(sqrt, res$marginals.variance.nominal[[1]]),
      type="l", main="Posterior density for std.dev.")
 par(mfrow=c(1,1))
+
+
+### Combine maps ##########################################
+
+images<-list.files("C:/Users/God/Downloads",pattern="*maps_all.png",full.names=TRUE)
+ims<-do.call("c",lapply(images,function(x){
+  im<-image_read(x)
+  i<-image_info(im)
+  print(i)
+  im1<-image_crop(im,"x1200+0+0")
+  im2<-image_crop(im,"x1200+1600+1200")
+  res<-image_append(c(im1,im2),stack=FALSE)
+  res<-image_draw(res)
+  w<-image_info(res)$width
+  h<-image_info(res)$height
+  pos<-seq(0,w,by=w/5)
+  te<-c("Mean","CI 2.5%","CI 97.5%","Mean Spatial Field","SD Spatial Field")
+  for(i in seq_along(pos)){
+    rect(0+pos[i],0,900+pos[i],150,col="white",border=NA,lty="dashed",lwd=5)
+    if(x==images[1]){text(pos[i]+(w/5*0.4),50, te[i],family="Helvetica",cex=10,font=2)}
+  }
+  dev.off()
+  border<-150
+  res<-image_border(res,"#FFFFFF",border)
+  res<-image_crop(res,paste0(image_info(res)$width-border,"x",image_info(res)$height,"+0+0"))
+  print(image_info(res))
+  code<-substr(sapply(strsplit(x,"/"),tail,1),1,3)
+  res<-image_annotate(res,code,size=150,gravity="west",location="+70+200",degrees=270,weight=900)
+  res
+}))
+im<-image_append(image_scale(ims, "6000"), stack = TRUE)
+image_write(im,"C:/Users/God/Downloads/mosquito_maps.png")
+file.show("C:/Users/God/Downloads/mosquito_maps.png")
+
+
+
+
+
+
+
+
+
 
 
 ### check lp combinations for lcc vars
