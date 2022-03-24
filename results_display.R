@@ -303,8 +303,10 @@ pred<-stack(pred,meansd)
 pred<-mask(pred,mappingzone)
 
 cols<-alpha(colo.scale(200,c("darkblue","steelblue3","lightgoldenrod","orange","red3","darkred","grey10")),0.80)
-colssd<-colo.scale((seq(0.01,5,length.out=200))^3,rev(cividis(200)))
-colsfield<-colo.scale(seq(range(values(pred[["mean.spatial.field"]]),na.rm=TRUE)[1],range(values(pred[["mean.spatial.field"]]),na.rm=TRUE)[2],length.out=200),c("darkblue","steelblue","ivory3","firebrick3","firebrick4"),center=TRUE)#,"grey20"))
+#colssd<-colo.scale((seq(0.01,5,length.out=200))^3,rev(cividis(200)))
+colsint<-c("darkblue","steelblue","ivory3","firebrick3","firebrick4")
+#colsint<-c("darkgreen","palegreen","ivory3","purple4","grey10")
+colsfield<-colo.scale(seq(range(values(pred[["mean.spatial.field"]]),na.rm=TRUE)[1],range(values(pred[["mean.spatial.field"]]),na.rm=TRUE)[2],length.out=200),colsint,center=TRUE)
 colssd<-colo.scale((seq(0.01,5,length.out=200))^3,colsfield)
 
 titles<-c("Mean","CI 2.5%","CI 97.5%","SD","Mean Spatial Field","SD Spatial Field")
@@ -341,12 +343,12 @@ lapply(names(pred),function(i){
     if(i %in% quantities[1:3] && TRUE){ # limits determined by CI if TRUE
       zlim<-range(values(pred2[[quantities[1:3]]]),na.rm=TRUE) 
     }
-    axis.args=list(at=frange(values(pred2[[i]])),labels=niceround(f(frange(values(pred2[[i]])))),cex.axis=0.8,lwd=0,tck=-0.2,mgp=c(3,0.3,0),lwd.ticks=1)
+    axis.args=list(at=frange(values(pred2[[i]])),labels=niceround(f(frange(values(pred2[[i]])))),cex.axis=1.2,lwd=0,tck=-0.2,mgp=c(3,0.3,0),lwd.ticks=1)
     legend.args=list(text=legtitles[i], side=4, font=2, line=-2.5, cex=0.8)
   }else{
     if(i%in%names(meansd)){
       zlim<-NULL
-      axis.args=list(at=sort(c(0,frange(values(pred2[[i]])))),labels=sort(round(c(0,f(frange(values(pred2[[i]])))),1)),cex.axis=0.8,lwd=0,tck=-0.2,mgp=c(3,0.3,0),lwd.ticks=1)
+      axis.args=list(at=sort(c(0,frange(values(pred2[[i]])))),labels=sort(round(c(0,f(frange(values(pred2[[i]])))),1)),cex.axis=1.2,lwd=0,tck=-0.2,mgp=c(3,0.3,0),lwd.ticks=1)
       legend.args=list(text=legtitles[i], side=4, font=2, line=-2.5, cex=0.8)
     }else{
       #zlim<-range(values(pred2[[quantities[1:3]]]),na.rm=TRUE)
@@ -385,7 +387,7 @@ lapply(names(pred),function(i){
   posx<-posx[-c(1,length(posx))]-diff(posx)[1]*0.25
   posy<-rep(diff(par("usr")[c(3,4)])*0.075+par("usr")[3],length(vpch))
   points(posx,posy,cex=vcex,pch=vpch,col=gray(0.2,1))
-  text(posx,posy,label=vleg,adj=c(0.5,4),xpd=TRUE)
+  text(posx,posy,label=vleg,adj=c(0.5,4),cex=1.2,xpd=TRUE)
 })
 
 dev.off()
@@ -469,7 +471,7 @@ yearpred<-"2003"
 Amapp<-inla.spde.make.A(mesh=mesh,loc=coordinates(xsmap)) 
 Amapmatrix<-as.matrix(Amapp)
 
-days<-seq(min(xs$jul[xs$year==yearpred]),max(xs$jul[xs$year==yearpred]),length.out=50)
+days<-seq(min(xs$jul[xs$year==yearpred]),max(xs$jul[xs$year==yearpred]),length.out=5)
 lpr<-foreach(j=seq_along(days),.packages=c("raster")) %do% {
   juls<-lp[["jul"]][which.min(abs(lp[["jul"]]$jul-days[j])),,drop=FALSE]
   standardv<-names(nparams)[!names(nparams)%in%c("intercept","jul","julsquare",1:50)]
@@ -513,17 +515,22 @@ zlim1<-range(sapply(lpr,function(i){range(values(i),na.rm=TRUE)}))
 zlim2<-range(c(sapply(lpr,function(i){range(values(i),na.rm=TRUE)}),xs$sp[xs$year==yearpred]))
 zlim<-c(zlim1[1],zlim2[2])
 
-img <- image_graph(1500, 1000, res = 150)
-lapply(seq_along(lpr),function(i){
+xs2<-xs[xs$year==yearpred,]
+climate<-aggregate(.~date,data=xs2@data[,c("date",names(xs2)[grep("anom|tmean|prcp",names(xs2))])],mean)
+climate$date<-as.Date(climate$date)
+climate[names(climate)[-1]]<-lapply(names(climate)[-1],function(i){bscale(climate[,i],i)})
+
+img <- image_graph(1500, 1200, res = 150)
+lapply(seq_along(lpr)[1],function(i){
   j<-round(days[i]*vscale[["jul"]]["sd"]+vscale[["jul"]]["mean"],0)
   xdate<-as.Date(format(as.Date(j,origin=paste0(yearpred,"-01-01")),"%Y-%m-%d"))
-  gw<-layout(matrix(c(rep(1,20),2),ncol=1))
-  par(mar=c(0,0,0,0),oma=c(0,0,0,5.5))
+  gw<-layout(matrix(c(rep(1,18),2,3,4,5,5,5),ncol=1))
+  par(mar=c(0,0,0,0),oma=c(0,0,0,10))
   at<-seq(min(values(log(lpr[[i]])),na.rm=TRUE),max(values(log(lpr[[i]])),na.rm=TRUE),length.out=5)
   #lab<-ifelse(round(exp(at),0)==0,round(exp(at),2),round(exp(at),0))
   lab<-niceround(exp(at))
-  labels<-paste(lab,c("min pred. > 0",rep("",length(at)-2),"max pred."))
-  plot(log(lpr[[i]]),range=log(zlim),col=cols,asp=1,axes=FALSE,bty="n",plg=list(at=at,labels=labels,cex=1.5))
+  labels<-paste(lab,c("min pred.",rep("",length(at)-2),"max pred."))
+  plot(log(lpr[[i]]),range=log(zlim),col=cols,asp=1,axes=FALSE,bty="n",plg=list(at=at,labels=labels,cex=1.5),mar=c(1,0,0,0))
   plot(st_geometry(water),border=NA,col="white",add=TRUE)
   rd<-as.character(seq.Date(xdate-3,xdate+3,by=1))
   xxs<-st_transform(st_as_sf(xs[xs$date%in%rd,]),crs=crs(lpr[[1]]))
@@ -535,20 +542,56 @@ lapply(seq_along(lpr),function(i){
   plot(st_geometry(xxs),pch=21,cex=2,add=TRUE,bg=colobs,col="grey10",lwd=0.4)
   text(st_coordinates(st_geometry(xxs)),label=xxs$sp,cex=0.7,col="grey10",adj=c(0.5,-1))
   #plot(log(lpr[[i]]),zlim=log(zlim),col=cols,asp=1,legend.only=TRUE)
-  mtext(side=3,line=-2,text=paste(gsub("_","",spcode),yearpred,"  observations:",paste(format(as.Date(range(rd)),"%b-%d"),collapse=" to "),sep="  "),adj=0.025,cex=1.5)
+  mtext(side=3,line=-1.6,text=paste(gsub("_","",spcode),yearpred,"  observations:",paste(format(as.Date(range(rd)),"%b-%d"),collapse=" to "),sep="  "),adj=0.025,cex=1.5)
   mtext(side=4,line=-1,text="Number of mosquitos per trap (observed and predicted)",adj=0.5)
-  xp<-xmin(lpr[[1]])+((xmax(lpr[[1]])-xmin(lpr[[1]]))*c(0.08,0.15))
-  yp<-rep(ymin(lpr[[1]])+((ymax(lpr[[1]])-ymin(lpr[[1]]))*0.92),2)  
+  xp<-xmin(lpr[[1]])+((xmax(lpr[[1]])-xmin(lpr[[1]]))*c(0.04,0.12))
+  yp<-rep(ymin(lpr[[1]])+((ymax(lpr[[1]])-ymin(lpr[[1]]))*0.88),2)  
   points(xp,yp,pch=21,cex=2,bg=colobs[c(which.min(xxs$sp),which.max(xxs$sp))],col="grey10",lwd=0.4)
   text(xp,yp,label=xxs$sp[c(which.min(xxs$sp),which.max(xxs$sp))],cex=0.7,col="grey10",adj=c(0.5,-1))
   text(xp,yp,label=c("min obs.","max obs."),cex=0.7,col="grey10",adj=c(1.2,0.5))
-  par(mar=c(1.5,0,0,3))
-  plot(xdate,0.75,pch=25,xlim=datelim,yaxt="n",xaxt="n",cex=2,bty="n",col=1,bg=1,ylim=0:1)
+  rec<-function(ybottom=-1000,xpd=TRUE){
+    rect(xleft=range(as.Date(rd))[1],ybottom=ybottom,xright=range(as.Date(rd))[2],ytop=3000000,border=NA,col=adjustcolor("darkgreen",0.2),xpd=xpd)
+  }
+  recb<-function(){
+    rect(par("usr")[1], par("usr")[3], par("usr")[2], par("usr")[4],col="grey95",border=NA)
+  }
+  par(mar=c(0.25,3,0,0))
+  plot(climate$date,climate$tmean2,xlim=datelim,type="n",xaxt="n",yaxt="n",bty="n")
+  recb()
+  lines(climate$date,climate$tmean2,lwd=2,col="tomato")
+  abline(h=mean(climate$tmean2),lty=3,lwd=1,col="tomato")
+  axis(2,mgp=c(2,0.45,0),tcl=-0.2,las=2,font=2,cex.axis=0.75,gap.axis=0)
+  rec()
+  
+  par(mar=c(0.25,3,0,0))
+  plot(climate$date,climate$anom2,xlim=datelim,type="n",xaxt="n",yaxt="n",bty="n")
+  recb()
+  lines(climate$date,climate$anom2,lwd=2,col="tomato4")
+  abline(h=0,lty=3,lwd=1,col="tomato4")
+  axis(2,mgp=c(2,0.45,0),tcl=-0.2,las=2,font=2,cex.axis=0.75,gap.axis=0)
+  rec()
+  
+  par(mar=c(0.25,3,0,0))
+  plot(climate$date,climate$prcp2,xlim=datelim,type="n",xaxt="n",yaxt="n",bty="n")
+  recb()
+  lines(climate$date,climate$prcp2,xlim=datelim,lwd=2,col="blue")
+  axis(2,mgp=c(2,0.45,0),tcl=-0.2,las=2,font=2,cex.axis=0.75,gap.axis=0)
+  abline(h=0,lty=3,lwd=1,col="blue")
+  rec()
+  
+  par(mar=c(1.5,3,0.25,0))
+  plot(xdate,0.75,pch=25,xlim=datelim,yaxt="n",xaxt="n",cex=2,bty="n",col=1,bg=1,ylim=c(0,max(xs2$sp))+1,log="y",type="n")
+  recb
+  at<-c(0.00000001,1,6,11,51,101,501,1001,5001,10001,max(xs2$sp)+1)
+  axis(2,at=at,label=at-1,mgp=c(2,0.45,0),tcl=-0.2,las=2,font=2,cex.axis=0.75,gap.axis=0)
   labd<-paste0(yearpred,c("-05-01","-06-01","-07-01","-08-01","-09-01","-10-01","-11-01"))
   labd<-sort(c(labd,gsub("01","15",labd)))
   at<-as.Date(labd)
   lab<-format(at,"%b-%d")
   axis(1,at=at,labels=lab,mgp=c(1.5,0.45,0),font=2,tcl=-0.2)
+  points(as.Date(xs2$date),xs2$sp+1,pch=16,cex=1,col=gray(0,0.1),xpd=TRUE)
+  rec(ybottom=0.8,xpd=TRUE)
+
 })
 dev.off()
 animation <- image_animate(img, fps = 2, optimize = TRUE)
