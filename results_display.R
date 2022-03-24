@@ -454,7 +454,105 @@ plot(f(pr),zlim=zlim)
 plot(st_geometry(water),border=NA,col="white",add=TRUE)
 plot(xxs,add=TRUE,pch=1,cex=scales::rescale(xxs$sp,c(0.5,10)))
 
-#### Map predictions across season #############################
+
+#### Map abundance across season #############################
+
+# not done yet and not general enough
+
+params<-dimnames(m$model.matrix)[[2]]
+nparams<-sapply(params,function(i){
+  #grep(paste0(i,":"),row.names(samples[[1]]$latent))  
+  match(paste0(i,":1"),row.names(samples[[1]]$latent)) 
+}) 
+yearpred<-"2003"
+#nweights<-grep("spatial",row.names(samples[[1]]$latent))
+Amapp<-inla.spde.make.A(mesh=mesh,loc=coordinates(xsmap)) 
+Amapmatrix<-as.matrix(Amapp)
+
+days<-seq(min(xs$jul[xs$year==yearpred]),max(xs$jul[xs$year==yearpred]),length.out=50)
+lpr<-foreach(j=seq_along(days),.packages=c("raster")) %do% {
+  juls<-lp[["jul"]][which.min(abs(lp[["jul"]]$jul-days[j])),,drop=FALSE]
+  standardv<-names(nparams)[!names(nparams)%in%c("intercept","jul","julsquare",1:50)]
+  dat<-as.matrix(xsmap@data[,standardv])
+  dat<-cbind(dat,data.frame(jul=days[j],julsquare=days[j]^2)[rep(1,nrow(dat)),])
+  dat<-cbind(dat,juls[,names(juls)%in%paste0("X",1:50)][rep(1,nrow(dat)),])
+  dat<-cbind(intercept=1,dat)
+
+  #betas<-samples[[1]]$latent[nparams]
+  betas<-m$summary.fixed[,1]
+  names(betas)<-ifelse(names(nparams)%in%1:50,paste0("X",names(nparams)),names(nparams))
+  fixed<-as.matrix(dat[,names(betas)]) %*% betas # make sure betas and vars are in the same order
+  #wk<-samples[[1]]$latent[nweights]
+  wk<-m$summary.random$spatial[,"mean"]
+  #spatial<-Amapmatrix %*% wk
+  spatial<-arma_mm(Amapmatrix,wk) # ~ 2 times faster than %*%
+  #}
+  p<-fixed+spatial
+  #p<-fixed # ignores spatial part
+  #p<-spatial
+  #cat("\r",paste(i,"/",max(nsims)," - ",j,"/",length(days)))
+  #p<-do.call("cbind",p)
+  #p<-cbind(rowQuantiles(p,probs=c(0.0275,0.975),na.rm=TRUE),rowMeans(p,na.rm=TRUE))[,c(1,3,2)]
+  #p<-exp(p)
+  xsmap$preds<-p[,1]
+  pr<-rasterize(xsmap,pgrid,field="preds",fun=mean)
+  pr<-mask(pr,mappingzone)
+  pr<-exp(pr)
+  #pr<-disaggregate(pr,fact=1,method="bilinear")
+  #print(j)
+  cat("\r",j,"/",length(days))
+  pr
+}
+lpr<-lapply(lpr,rast)
+
+
+jul<-round(days*vscale[["jul"]]["sd"]+vscale[["jul"]]["mean"],0)
+datelim<-range(as.Date(format(as.Date(jul,origin=paste0(yearpred,"-01-01")),"%Y-%m-%d")))+c(-5,5)
+
+zlim1<-range(sapply(lpr,function(i){range(values(i),na.rm=TRUE)}))
+zlim2<-range(c(sapply(lpr,function(i){range(values(i),na.rm=TRUE)}),xs$sp[xs$year==yearpred]))
+zlim<-c(zlim1[1],zlim2[2])
+
+img <- image_graph(1500, 1000, res = 150)
+lapply(seq_along(lpr),function(i){
+  j<-round(days[i]*vscale[["jul"]]["sd"]+vscale[["jul"]]["mean"],0)
+  xdate<-as.Date(format(as.Date(j,origin=paste0(yearpred,"-01-01")),"%Y-%m-%d"))
+  gw<-layout(matrix(c(1,rep(2,20)),ncol=1))
+  par(mar=c(1,0,0,3),oma=c(0,0,0,5))
+  plot(xdate,1,pch=25,xlim=datelim,yaxt="n",cex=2,bty="n",col=1,bg=1)
+  par(mar=c(0,0,0,0))
+  at<-seq(min(values(log(lpr[[i]])),na.rm=TRUE),max(values(log(lpr[[i]])),na.rm=TRUE),length.out=5)
+  #lab<-ifelse(round(exp(at),0)==0,round(exp(at),2),round(exp(at),0))
+  lab<-niceround(exp(at))
+  labels<-paste(lab,c("min pred. > 0",rep("",length(at)-2),"max pred."))
+  plot(log(lpr[[i]]),range=log(zlim),col=cols,asp=1,axes=FALSE,bty="n",plg=list(at=at,labels=labels,cex=1.5))
+  plot(st_geometry(water),border=NA,col="white",add=TRUE)
+  rd<-as.character(seq.Date(xdate-3,xdate+3,by=1))
+  xxs<-st_transform(st_as_sf(xs[xs$date%in%rd,]),crs=crs(lpr[[1]]))
+  colobs<-c(log(zlim),log(xxs$sp))
+  colobs<-ifelse(is.infinite(colobs),NA,colobs)
+  colobs<-colo.scale(colobs,cols)[-(1:2)]
+  colobs<-ifelse(is.na(colobs),"#FFFFFF",colobs)
+  #plot(st_geometry(xxs),pch=1,cex=scales::rescale(identity(c(0,max(xs$sp[xs$year==yearpred],na.rm=TRUE),xxs$sp)+0.01),to=c(0.25,10))[-(1:2)],add=TRUE)
+  plot(st_geometry(xxs),pch=21,cex=2,add=TRUE,bg=colobs,col="grey10",lwd=0.4)
+  text(st_coordinates(st_geometry(xxs)),label=xxs$sp,cex=0.7,col="grey10",adj=c(0.5,-1))
+  #plot(log(lpr[[i]]),zlim=log(zlim),col=cols,asp=1,legend.only=TRUE)
+  mtext(side=3,line=-2,text=paste(gsub("_","",spcode),yearpred,"  observations:",paste(format(as.Date(range(rd)),"%b-%d"),collapse=" to "),sep="  "),adj=0.15)
+  mtext(side=4,line=-1,text="Number of mosquitos per trap (observed and predicted)",adj=0.5)
+  xp<-xmin(lpr[[1]])+((xmax(lpr[[1]])-xmin(lpr[[1]]))*c(0.58,0.65))
+  yp<-rep(ymin(lpr[[1]])+((ymax(lpr[[1]])-ymin(lpr[[1]]))*0.97),2)  
+  points(xp,yp,pch=21,cex=2,bg=colobs[c(which.min(xxs$sp),which.max(xxs$sp))],col="grey10",lwd=0.4)
+  text(xp,yp,label=xxs$sp[c(which.min(xxs$sp),which.max(xxs$sp))],cex=0.7,col="grey10",adj=c(0.5,-1))
+  text(xp,yp,label=c("min obs.","max obs."),cex=0.7,col="grey10",adj=c(1.2,0.5))
+})
+dev.off()
+animation <- image_animate(img, fps = 2, optimize = TRUE)
+image_write(animation,file.path("C:/Users/God/Downloads",paste0(paste0(spcode,yearpred),"predicted_abundance.gif")))
+file.show(file.path("C:/Users/God/Downloads",paste0(paste0(spcode,yearpred),"predicted_abundance.gif")))
+
+
+
+#### Map predictions across season with uncertainty #############################
 
 # not done yet and not general enough
 
@@ -805,10 +903,23 @@ res<-image_append(c(res1,res2),stack=TRUE)
 image_write(res,"C:/Users/God/Downloads/mosquito_effects.png")
 file.show("C:/Users/God/Downloads/mosquito_effects.png")
 
+### Combine DIC tables ######################################
 
-
-
-
+images<-list.files("C:/Users/God/Downloads",pattern="*dics.png",full.names=TRUE)
+ims<-do.call("c",lapply(images,function(x){
+  im<-image_read(x)
+  im<-image_border(im,"#FFFFFF","25x90")
+  code<-substr(sapply(strsplit(x,"/"),tail,1),1,3)
+  im<-image_draw(im)
+  text(110,50,code,family="Helvetica",cex=6,font=2)
+  dev.off()
+  im
+}))
+res1<-image_append(c(ims[1],ims[2]),stack=FALSE)
+res2<-image_append(c(ims[3],ims[4]),stack=FALSE)  
+res<-image_append(c(res1,res2),stack=TRUE)
+image_write(res,"C:/Users/God/Downloads/mosquito_dic_tables.png")
+file.show("C:/Users/God/Downloads/mosquito_dic_tables.png")
 
 ### check lp combinations for lcc vars
 
