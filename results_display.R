@@ -78,9 +78,9 @@ resdics$Variables<-gsub("jul","ns(jul)",resdics$Variables)
 resdics<-resdics[,c(3,1,2)]
 
 resdics %>%
-  kbl(row.names = FALSE) %>%
+  kable(row.names = FALSE, align=c("l","l","r")) %>%
   kable_classic(full_width = FALSE, html_font = "Helvetica") %>% 
-  row_spec(0, bold = T, background = "#EEEEEE",align="l") %>% 
+  row_spec(0, bold = T, background = "#EEEEEE",align="c") %>% 
   #kable_styling(full_width = FALSE, font_size = 12) %>% 
   save_kable(file = file.path("C:/Users/God/Downloads",paste0(spcode,"dics.png")),density=500,zoom=2)
 file.show(file.path("C:/Users/God/Downloads",paste0(spcode,"dics.png")))
@@ -303,8 +303,9 @@ pred<-stack(pred,meansd)
 pred<-mask(pred,mappingzone)
 
 cols<-alpha(colo.scale(200,c("darkblue","steelblue3","lightgoldenrod","orange","red3","darkred","grey10")),0.80)
-colssd<-rev(cividis(200))
+colssd<-colo.scale((seq(0.01,5,length.out=200))^3,rev(cividis(200)))
 colsfield<-colo.scale(seq(range(values(pred[["mean.spatial.field"]]),na.rm=TRUE)[1],range(values(pred[["mean.spatial.field"]]),na.rm=TRUE)[2],length.out=200),c("darkblue","steelblue","ivory3","firebrick3","firebrick4"),center=TRUE)#,"grey20"))
+colssd<-colo.scale((seq(0.01,5,length.out=200))^3,colsfield)
 
 titles<-c("Mean","CI 2.5%","CI 97.5%","SD","Mean Spatial Field","SD Spatial Field")
 legtitles<-c("No. of Mosquitos / trap","No. of Mosquitos / trap","No. of Mosquitos / trap","No. of Mosquitos / trap (on the link scale)","No. of Mosquitos / trap (on the link scale)","No. of Mosquitos / trap (on the link scale)")
@@ -786,9 +787,23 @@ image_write(im,"C:/Users/God/Downloads/mosquito_maps.png")
 file.show("C:/Users/God/Downloads/mosquito_maps.png")
 
 
+### Combine marginal effects ######################################
 
-
-
+images<-list.files("C:/Users/God/Downloads",pattern="*marginal_effects.png",full.names=TRUE)
+ims<-do.call("c",lapply(images,function(x){
+  im<-image_read(x)
+  im<-image_border(im,"#FFFFFF","x100")
+  code<-substr(sapply(strsplit(x,"/"),tail,1),1,3)
+  im<-image_draw(im)
+    text(350,50,code,family="Helvetica",cex=10,font=2)
+  dev.off()
+  im
+}))
+res1<-image_append(c(ims[1],ims[2]),stack=FALSE)
+res2<-image_append(c(ims[3],ims[4]),stack=FALSE)  
+res<-image_append(c(res1,res2),stack=TRUE)
+image_write(res,"C:/Users/God/Downloads/mosquito_effects.png")
+file.show("C:/Users/God/Downloads/mosquito_effects.png")
 
 
 
