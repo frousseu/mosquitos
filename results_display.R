@@ -7,6 +7,7 @@ library(kableExtra)
 library(webshot)
 library(png)
 library(grid)
+library(magick)
 
 options(device = "X11")
 grDevices::windows.options(record=TRUE)
@@ -16,7 +17,7 @@ Sys.setlocale("LC_ALL","English")
 
 ## RESULTS ##################################################
 
-load("CPR_model_outputs.RData")
+load("VEX_model_outputs.RData")
 
 ls()[sapply(ls(),function(i){
   obj<-paste0("\\b",i,"\\b")
@@ -318,7 +319,7 @@ names(legtitles)<-names(pred)
 
 png(file.path("C:/Users/God/Downloads",paste0(spcode,"maps_all.png")),width=16,height=8,units="in",res=300,pointsize=11)
 
-par(mfrow=n2mfrow(nlayers(pred),asp=1.5),mar=c(1,0.5,1,5),oma=c(0,0,0,0),bty="n")
+par(mfrow=n2mfrow(nlayers(pred),asp=1.5),mar=c(1,0.5,1,7),oma=c(0,0,0,0),bty="n")
 lapply(names(pred),function(i){
   print(i)
   if(i%in%names(meansd)){
@@ -344,12 +345,12 @@ lapply(names(pred),function(i){
       zlim<-range(values(pred2[[quantities[1:3]]]),na.rm=TRUE) 
     }
     axis.args=list(at=frange(values(pred2[[i]])),labels=niceround(f(frange(values(pred2[[i]])))),cex.axis=1.2,lwd=0,tck=-0.2,mgp=c(3,0.3,0),lwd.ticks=1)
-    legend.args=list(text=legtitles[i], side=4, font=2, line=-2.5, cex=0.8)
+    legend.args=list(text=legtitles[i], side=4, font=2, line=-2.5, cex=1)
   }else{
     if(i%in%names(meansd)){
       zlim<-NULL
       axis.args=list(at=sort(c(0,frange(values(pred2[[i]])))),labels=sort(round(c(0,f(frange(values(pred2[[i]])))),1)),cex.axis=1.2,lwd=0,tck=-0.2,mgp=c(3,0.3,0),lwd.ticks=1)
-      legend.args=list(text=legtitles[i], side=4, font=2, line=-2.5, cex=0.8)
+      legend.args=list(text=legtitles[i], side=4, font=2, line=-2.5, cex=1)
     }else{
       #zlim<-range(values(pred2[[quantities[1:3]]]),na.rm=TRUE)
       #axis.args=list(at=c(frange(zlim),range(values(pred2[[i]]),na.rm=TRUE)),labels=round(f(c(frange(zlim),range(values(pred2[[i]]),na.rm=TRUE))),0),cex.axis=0.8,lwd=0,tck=-0.2,mgp=c(3,0.3,0),lwd.ticks=1)
@@ -393,69 +394,6 @@ lapply(names(pred),function(i){
 dev.off()
 file.show(file.path("C:/Users/God/Downloads",paste0(spcode,"maps_all.png")))
 
-#### Map predictions with posteriors samples #############################
-
-# not done yet and not general enough
-# this is mostly to make sure that the posterior sample approach gives the same results as the NA approach in the map stack
-
-params<-dimnames(m$model.matrix)[[2]]
-nparams<-sapply(params,function(i){
-  #grep(paste0(i,":"),row.names(samples[[1]]$latent))  
-  match(paste0(i,":1"),row.names(samples[[1]]$latent)) 
-}) 
-#table(sapply(strsplit(row.names(samples[[1]]$latent),":"),"[",1))
-nweights<-grep("spatial",row.names(samples[[1]]$latent))
-Amapmatrix<-as.matrix(Amap)
-
-#par(mfrow=n2mfrow(length(v1m),asp=3.5/2),mar=c(3,2,1,1),oma=c(0,10,0,0))
-#for(k in seq_along(v1m)){
-p<-lapply((1:nsims)[1:500],function(i){
-  dat<-xsmap@data
-  juls<-lp[["jul"]][which.min(abs(lp[["jul"]]$jul-dat$jul[1])),,drop=FALSE] # finds the closest jul value to get the corresponding spline basis
-  dat<-cbind(dat,juls[,names(juls)%in%paste0("X",1:50)][rep(1,nrow(dat)),])
-  betas<-samples[[i]]$latent[nparams]
-  names(betas)<-ifelse(names(nparams)%in%1:50,paste0("X",names(nparams)),names(nparams))
-  dat<-dat[,names(betas)]
-  fixed<-as.matrix(dat) %*% betas # make sure betas and vars are in the same order
-  # this if we want a spatial part
-  wk<-samples[[i]]$latent[nweights]
-  #if(is.factor(xs@data[,v[k]])){ # factors never in model (et)
-  #spatial<-as.matrix(inla.spde.make.A(mesh=mesh,loc=matrix(c(0.3,0.5),ncol=2)[rep(1,nlevels(size[,v[k]])),,drop=FALSE])) %*% wk
-  #}else{
-  #spatial<-Amapmatrix %*% wk
-  spatial<-arma_mm(Amapmatrix,wk) # ~ 3 times faster than %*%
-  #}
-  p<-fixed+spatial
-  #p<-fixed # ignores spatial part
-  #p<-spatial
-  print(i)
-  p
-})
-p<-do.call("cbind",p)
-#p<-t(apply(p,1,function(i){c(quantile(i,0.0275,na.rm=TRUE),mean(i),quantile(i,0.975,na.rm=TRUE))}))
-p<-cbind(rowQuantiles(p,probs=c(0.0275,0.975),na.rm=TRUE),rowMeans(p,na.rm=TRUE))[,c(1,3,2)]
-#p<-exp(p)
-
-xsmap$preds<-p[,2]
-
-pr<-rasterize(xsmap,pgrid,field="preds",fun=mean)
-pr<-mask(pr,mappingzone)
-pr<-exp(pr)
-#pr<-disaggregate(pr,fact=2,method="bilinear")
-
-par(mfrow=c(1,2),oma=c(0,0,0,4))
-f<-function(i){log(i)}
-zlim<-range(f(c(values(pred[[1]]),values(pr))),na.rm=TRUE)
-zlim<-range(f(c(values(pr))),na.rm=TRUE)
-xxs<-xs[xs$week%in%xsmap$week[1],]
-plot(f(pred[[1]]),zlim=zlim)
-plot(st_geometry(water),border=NA,col="white",add=TRUE)
-plot(xxs,add=TRUE,pch=1,cex=scales::rescale(xxs$sp,c(0.5,10)))
-#plot(resample(pred[[1]],pr))
-plot(f(pr),zlim=zlim)
-plot(st_geometry(water),border=NA,col="white",add=TRUE)
-plot(xxs,add=TRUE,pch=1,cex=scales::rescale(xxs$sp,c(0.5,10)))
-
 
 #### Map abundance across season #############################
 
@@ -471,7 +409,7 @@ yearpred<-"2003"
 Amapp<-inla.spde.make.A(mesh=mesh,loc=coordinates(xsmap)) 
 Amapmatrix<-as.matrix(Amapp)
 
-days<-seq(min(xs$jul[xs$year==yearpred]),max(xs$jul[xs$year==yearpred]),length.out=5)
+days<-seq(min(xs$jul[xs$year==yearpred]),max(xs$jul[xs$year==yearpred]),length.out=20)
 lpr<-foreach(j=seq_along(days),.packages=c("raster")) %do% {
   juls<-lp[["jul"]][which.min(abs(lp[["jul"]]$jul-days[j])),,drop=FALSE]
   standardv<-names(nparams)[!names(nparams)%in%c("intercept","jul","julsquare",1:50)]
@@ -521,16 +459,16 @@ climate$date<-as.Date(climate$date)
 climate[names(climate)[-1]]<-lapply(names(climate)[-1],function(i){bscale(climate[,i],i)})
 
 img <- image_graph(1500, 1200, res = 150)
-lapply(seq_along(lpr)[1],function(i){
+lapply(seq_along(lpr),function(i){
   j<-round(days[i]*vscale[["jul"]]["sd"]+vscale[["jul"]]["mean"],0)
   xdate<-as.Date(format(as.Date(j,origin=paste0(yearpred,"-01-01")),"%Y-%m-%d"))
   gw<-layout(matrix(c(rep(1,18),2,3,4,5,5,5),ncol=1))
-  par(mar=c(0,0,0,0),oma=c(0,0,0,10))
+  par(mar=c(0,0,0,0),oma=c(0,0,0,12))
   at<-seq(min(values(log(lpr[[i]])),na.rm=TRUE),max(values(log(lpr[[i]])),na.rm=TRUE),length.out=5)
   #lab<-ifelse(round(exp(at),0)==0,round(exp(at),2),round(exp(at),0))
   lab<-niceround(exp(at))
   labels<-paste(lab,c("min pred.",rep("",length(at)-2),"max pred."))
-  plot(log(lpr[[i]]),range=log(zlim),col=cols,asp=1,axes=FALSE,bty="n",plg=list(at=at,labels=labels,cex=1.5),mar=c(1,0,0,0))
+  plot(log(lpr[[i]]),range=log(zlim),col=cols,asp=1,axes=FALSE,bty="n",plg=list(at=at,labels=labels,cex=1.5,xpd=TRUE),mar=c(1,0,0.5,0))
   plot(st_geometry(water),border=NA,col="white",add=TRUE)
   rd<-as.character(seq.Date(xdate-3,xdate+3,by=1))
   xxs<-st_transform(st_as_sf(xs[xs$date%in%rd,]),crs=crs(lpr[[1]]))
@@ -544,18 +482,18 @@ lapply(seq_along(lpr)[1],function(i){
   #plot(log(lpr[[i]]),zlim=log(zlim),col=cols,asp=1,legend.only=TRUE)
   mtext(side=3,line=-1.6,text=paste(gsub("_","",spcode),yearpred,"  observations:",paste(format(as.Date(range(rd)),"%b-%d"),collapse=" to "),sep="  "),adj=0.025,cex=1.5)
   mtext(side=4,line=-1,text="Number of mosquitos per trap (observed and predicted)",adj=0.5)
-  xp<-xmin(lpr[[1]])+((xmax(lpr[[1]])-xmin(lpr[[1]]))*c(0.04,0.12))
-  yp<-rep(ymin(lpr[[1]])+((ymax(lpr[[1]])-ymin(lpr[[1]]))*0.88),2)  
+  xp<-xmin(lpr[[1]])+((xmax(lpr[[1]])-xmin(lpr[[1]]))*c(0.05,0.13))
+  yp<-rep(ymin(lpr[[1]])+((ymax(lpr[[1]])-ymin(lpr[[1]]))*0.90),2)  
   points(xp,yp,pch=21,cex=2,bg=colobs[c(which.min(xxs$sp),which.max(xxs$sp))],col="grey10",lwd=0.4)
   text(xp,yp,label=xxs$sp[c(which.min(xxs$sp),which.max(xxs$sp))],cex=0.7,col="grey10",adj=c(0.5,-1))
-  text(xp,yp,label=c("min obs.","max obs."),cex=0.7,col="grey10",adj=c(1.2,0.5))
+  text(xp,yp,label=c("min obs.","max obs."),cex=1,col="grey10",adj=c(1.2,0.5))
   rec<-function(ybottom=-1000,xpd=TRUE){
     rect(xleft=range(as.Date(rd))[1],ybottom=ybottom,xright=range(as.Date(rd))[2],ytop=3000000,border=NA,col=adjustcolor("darkgreen",0.2),xpd=xpd)
   }
   recb<-function(){
-    rect(par("usr")[1], par("usr")[3], par("usr")[2], par("usr")[4],col="grey95",border=NA)
+    rect(par("usr")[1], par("usr")[3], par("usr")[2], par("usr")[4],col=adjustcolor("darkgreen",0.1),border=NA)
   }
-  par(mar=c(0.25,3,0,0))
+  par(mar=c(0.5,3,0,0))
   plot(climate$date,climate$tmean2,xlim=datelim,type="n",xaxt="n",yaxt="n",bty="n")
   recb()
   lines(climate$date,climate$tmean2,lwd=2,col="tomato")
@@ -563,7 +501,7 @@ lapply(seq_along(lpr)[1],function(i){
   axis(2,mgp=c(2,0.45,0),tcl=-0.2,las=2,font=2,cex.axis=0.75,gap.axis=0)
   rec()
   
-  par(mar=c(0.25,3,0,0))
+  par(mar=c(0.5,3,0,0))
   plot(climate$date,climate$anom2,xlim=datelim,type="n",xaxt="n",yaxt="n",bty="n")
   recb()
   lines(climate$date,climate$anom2,lwd=2,col="tomato4")
@@ -571,7 +509,7 @@ lapply(seq_along(lpr)[1],function(i){
   axis(2,mgp=c(2,0.45,0),tcl=-0.2,las=2,font=2,cex.axis=0.75,gap.axis=0)
   rec()
   
-  par(mar=c(0.25,3,0,0))
+  par(mar=c(0.5,3,0,0))
   plot(climate$date,climate$prcp2,xlim=datelim,type="n",xaxt="n",yaxt="n",bty="n")
   recb()
   lines(climate$date,climate$prcp2,xlim=datelim,lwd=2,col="blue")
@@ -597,6 +535,70 @@ dev.off()
 animation <- image_animate(img, fps = 2, optimize = TRUE)
 image_write(animation,file.path("C:/Users/God/Downloads",paste0(paste0(spcode,yearpred),"predicted_abundance.gif")))
 file.show(file.path("C:/Users/God/Downloads",paste0(paste0(spcode,yearpred),"predicted_abundance.gif")))
+
+
+#### Map predictions with posteriors samples #############################
+
+# not done yet and not general enough
+# this is mostly to make sure that the posterior sample approach gives the same results as the NA approach in the map stack
+
+params<-dimnames(m$model.matrix)[[2]]
+nparams<-sapply(params,function(i){
+  #grep(paste0(i,":"),row.names(samples[[1]]$latent))  
+  match(paste0(i,":1"),row.names(samples[[1]]$latent)) 
+}) 
+#table(sapply(strsplit(row.names(samples[[1]]$latent),":"),"[",1))
+nweights<-grep("spatial",row.names(samples[[1]]$latent))
+Amapmatrix<-as.matrix(Amap)
+
+#par(mfrow=n2mfrow(length(v1m),asp=3.5/2),mar=c(3,2,1,1),oma=c(0,10,0,0))
+#for(k in seq_along(v1m)){
+p<-lapply((1:nsims)[1:20],function(i){
+  dat<-xsmap@data
+  juls<-lp[["jul"]][which.min(abs(lp[["jul"]]$jul-dat$jul[1])),,drop=FALSE] # finds the closest jul value to get the corresponding spline basis
+  dat<-cbind(dat,juls[,names(juls)%in%paste0("X",1:50)][rep(1,nrow(dat)),])
+  betas<-samples[[i]]$latent[nparams]
+  names(betas)<-ifelse(names(nparams)%in%1:50,paste0("X",names(nparams)),names(nparams))
+  dat<-dat[,names(betas)]
+  fixed<-as.matrix(dat) %*% betas # make sure betas and vars are in the same order
+  # this if we want a spatial part
+  wk<-samples[[i]]$latent[nweights]
+  #if(is.factor(xs@data[,v[k]])){ # factors never in model (et)
+  #spatial<-as.matrix(inla.spde.make.A(mesh=mesh,loc=matrix(c(0.3,0.5),ncol=2)[rep(1,nlevels(size[,v[k]])),,drop=FALSE])) %*% wk
+  #}else{
+  #spatial<-Amapmatrix %*% wk
+  spatial<-arma_mm(Amapmatrix,wk) # ~ 3 times faster than %*%
+  #}
+  p<-fixed+spatial
+  #p<-fixed # ignores spatial part
+  #p<-spatial
+  print(i)
+  p
+})
+p<-do.call("cbind",p)
+#p<-t(apply(p,1,function(i){c(quantile(i,0.0275,na.rm=TRUE),mean(i),quantile(i,0.975,na.rm=TRUE))}))
+p<-cbind(rowQuantiles(p,probs=c(0.0275,0.975),na.rm=TRUE),rowMeans(p,na.rm=TRUE))[,c(1,3,2)]
+#p<-exp(p)
+
+xsmap$preds<-p[,2]
+
+pr<-rasterize(xsmap,pgrid,field="preds",fun=mean)
+pr<-mask(pr,mappingzone)
+pr<-exp(pr)
+#pr<-disaggregate(pr,fact=2,method="bilinear")
+
+par(mfrow=c(1,2),oma=c(0,0,0,4))
+f<-function(i){log(i)}
+zlim<-range(f(c(values(pred[[1]]),values(pr))),na.rm=TRUE)
+zlim<-range(f(c(values(pr))),na.rm=TRUE)
+xxs<-xs[xs$week%in%xsmap$week[1],]
+plot(f(pred[[1]]),zlim=zlim)
+plot(st_geometry(water),border=NA,col="white",add=TRUE)
+plot(xxs,add=TRUE,pch=1,cex=scales::rescale(xxs$sp,c(0.5,10)))
+#plot(resample(pred[[1]],pr))
+plot(f(pr),zlim=zlim)
+plot(st_geometry(water),border=NA,col="white",add=TRUE)
+plot(xxs,add=TRUE,pch=1,cex=scales::rescale(xxs$sp,c(0.5,10)))
 
 
 
@@ -931,6 +933,10 @@ ims<-do.call("c",lapply(images,function(x){
 im<-image_append(image_scale(ims, "6000"), stack = TRUE)
 image_write(im,"C:/Users/God/Downloads/mosquito_maps.png")
 file.show("C:/Users/God/Downloads/mosquito_maps.png")
+im<-image_read("C:/Users/God/Downloads/mosquito_maps.png")
+im<-image_scale(im[1],"x700")
+image_write(im,"C:/Users/God/Downloads/reduced_mosquito_maps.png")
+#file.show("C:/Users/God/Downloads/reduced_mosquito_maps.png")
 
 
 ### Combine marginal effects ######################################
@@ -950,6 +956,11 @@ res2<-image_append(c(ims[3],ims[4]),stack=FALSE)
 res<-image_append(c(res1,res2),stack=TRUE)
 image_write(res,"C:/Users/God/Downloads/mosquito_effects.png")
 file.show("C:/Users/God/Downloads/mosquito_effects.png")
+im<-image_read("C:/Users/God/Downloads/mosquito_effects.png")
+im<-image_scale(im[1],"x700")
+image_write(im,"C:/Users/God/Downloads/reduced_mosquito_effects.png")
+#file.show("C:/Users/God/Downloads/reduced_mosquito_effects.png")
+
 
 ### Combine DIC tables ######################################
 
@@ -968,6 +979,44 @@ res2<-image_append(c(ims[3],ims[4]),stack=FALSE)
 res<-image_append(c(res1,res2),stack=TRUE)
 image_write(res,"C:/Users/God/Downloads/mosquito_dic_tables.png")
 file.show("C:/Users/God/Downloads/mosquito_dic_tables.png")
+im<-image_read("C:/Users/God/Downloads/mosquito_dic_tables.png")
+im<-image_scale(im[1],"x700")
+image_write(im,"C:/Users/God/Downloads/reduced_mosquito_dic_tables.png")
+#file.show("C:/Users/God/Downloads/reduced_mosquito_dic_tables.png")
+
+### Combine animations ######################################
+
+images<-list.files("C:/Users/God/Downloads",pattern="*predicted_abundance.gif",full.names=TRUE)
+ni<-nrow(image_info(image_read(images[1])))
+#images<-images[c(1,1,1,1)]
+ims<-lapply(images,function(x){
+  im<-image_read(x)
+  im<-image_border(im,"#FFFFFF","0x20")
+  im
+})
+ims2<-lapply(1:ni,function(i){
+  im<-do.call("c",lapply(seq_along(ims),function(j){
+    ims[[j]][i]  
+  }))  
+  res1<-image_append(c(im[1],im[2]),stack=FALSE)
+  res2<-image_append(c(im[3],im[4]),stack=FALSE)  
+  res<-image_append(c(res1,res2),stack=TRUE)
+  res
+})
+#image_montage(ims,tile="2x2")
+animation<-image_animate(do.call("c",ims2),fps=2,optimize=FALSE)
+image_write(animation,"C:/Users/God/Downloads/mosquito_animations.gif")
+file.show("C:/Users/God/Downloads/mosquito_animations.gif")
+rm(images,im,ni,ims,ims2,animation)
+im<-image_read("C:/Users/God/Downloads/mosquito_animations.gif")
+im<-image_scale(im[1],"x700")
+image_write(im,"C:/Users/God/Downloads/reduced_mosquito_animations.gif")
+#file.show("C:/Users/God/Downloads/reduced_mosquito_animations.gif")
+
+
+### Other figures ################################################
+
+
 
 ### check lp combinations for lcc vars
 
