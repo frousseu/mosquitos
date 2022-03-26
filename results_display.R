@@ -17,7 +17,7 @@ Sys.setlocale("LC_ALL","English")
 
 ## RESULTS ##################################################
 
-load("VEX_model_outputs.RData")
+load("CQP_model_outputs.RData")
 
 ls()[sapply(ls(),function(i){
   obj<-paste0("\\b",i,"\\b")
@@ -110,6 +110,55 @@ for (j in 1:length(posteriors)) {
 }
 par(mfrow=c(1,1))
 
+
+#### Combine posteriors ########################################
+
+posteriors<-c(m$marginals.fixed,m$marginals.hyper)
+posteriors<-posteriors[!names(posteriors)%in%1:50 & !grepl("size|Stdev|Range",names(posteriors))]
+
+par(mfrow=n2mfrow(length(posteriors),asp=1.49),mar=c(3,2.5,1,1))
+for (j in 1:length(posteriors)) {
+  k<-posteriors[[j]][,2]>=1e-2*max(posteriors[[j]][,2])
+  posteriors[[j]]<-posteriors[[j]][k,]
+}
+
+posteriors<-posteriors[rev(order(abs(sapply(posteriors,function(i){i[which.max(i[,2]),1]}))))]
+
+topoly<-function(x,y,...){
+  polygon(c(x,rev(x)),c(y,rep(0,length(y))),...)  
+}
+posneg<-function(x){
+  neg<-trapz(x[x[,1]<0,1],x[x[,1]<0,2])  
+  pos<-trapz(x[x[,1]>0,1],x[x[,1]>0,2]) 
+  if(neg>0.975){return(adjustcolor("steelblue",0.5))}
+  if(pos>0.975){return(adjustcolor("firebrick4",0.5))}
+  adjustcolor("ivory3",0.8)
+}
+
+png(file.path("C:/Users/God/Downloads",paste0(spcode,"posteriors.png")),width=4,height=6,units="in",res=300,pointsize=11)
+xlim<-range(do.call("rbind",posteriors)[,1])
+xlim<-c(-1.0,0.8)
+ylim<-c(0,range(do.call("rbind",posteriors)[,2])[2])
+par(mfrow=c(length(posteriors),1),mar=c(0,0,0,0),oma=c(3,1,2,1))
+for (j in 1:length(posteriors)) {
+  plot(posteriors[[j]][,1],posteriors[[j]][,2],type='n',xlab="",ylab='Density',xlim=xlim,ylim=ylim,yaxt="n",xaxt="n",bty="n",xpd=TRUE)#
+  abline(h=seq(0,max(ylim),length.out=5),lty=3,col="grey90")
+  #grid(col="grey90")
+  #box(col="grey99",lwd=5)
+  lines(c(0,0),ylim,lty=3,lwd=1,col="grey45")
+  at<-pretty(xlim,8)
+  lapply(at,function(x){lines(c(x,x),ylim,lty=3,col="grey90")})
+  lines(c(0,0),ylim,lty=1,lwd=1,col="grey80")
+  if(j==length(posteriors)){
+    axis(1,at=at,labels=at,tcl=-0.2,mgp=c(1.5,0.25,0),cex.axis=1,font=2,col="grey80")
+  }
+  text(par("usr")[1]+abs(diff(par("usr")[c(1,3)]))*0.0,par("usr")[2]+diff(par("usr")[c(2,4)])*0.90,names(posteriors)[j],cex=1.5,font=2,adj=c(0,1),col=gray(0,0.9))
+  topoly(posteriors[[j]][,1],posteriors[[j]][,2],border=NA,col=posneg(posteriors[[j]]))#
+  mtext(outer=TRUE,side=1,line=2,text="Coefficient",font=2)
+  mtext(outer=TRUE,side=3,line=0.25,text=substr(spcode,1,3),font=2,cex=1.5,adj=0.01)
+}
+dev.off()
+file.show(file.path("C:/Users/God/Downloads",paste0(spcode,"posteriors.png")))
 
 
 #### Spatial fields #########################################
@@ -982,6 +1031,23 @@ file.show("C:/Users/God/Downloads/mosquito_dic_tables.png")
 im<-image_read("C:/Users/God/Downloads/mosquito_dic_tables.png")
 im<-image_scale(im[1],"x700")
 image_write(im,"C:/Users/God/Downloads/reduced_mosquito_dic_tables.png")
+#file.show("C:/Users/God/Downloads/reduced_mosquito_dic_tables.png")
+
+### Combine posteriors ############################################
+
+images<-list.files("C:/Users/God/Downloads",pattern="*posteriors.png",full.names=TRUE)
+ims<-do.call("c",lapply(images,function(x){
+  im<-image_read(x)
+  im
+}))
+#res1<-image_append(c(ims[1],ims[2]),stack=FALSE)
+#res2<-image_append(c(ims[3],ims[4]),stack=FALSE)  
+res<-image_append(ims,stack=FALSE)
+image_write(res,"C:/Users/God/Downloads/mosquito_posteriors_all.png")
+file.show("C:/Users/God/Downloads/mosquito_posteriors_all.png")
+im<-image_read("C:/Users/God/Downloads/mosquito_posteriors_all.png")
+im<-image_scale(im[1],"x700")
+image_write(im,"C:/Users/God/Downloads/reduced_mosquito_posteriors_all.png")
 #file.show("C:/Users/God/Downloads/reduced_mosquito_dic_tables.png")
 
 ### Combine animations ######################################
