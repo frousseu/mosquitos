@@ -1106,30 +1106,82 @@ par(mfrow=c(1,1))
 ### Show trap counts in mapping zone #################
 
 
-
-
-
-
-
 ### Study area map with lcc ################################################
+
+lscale<-function(w=10000,lab="20 km"){
+  wi<-diff(par("usr")[c(1,2)])
+  he<-diff(par("usr")[c(3,4)])
+  xleft<-par("usr")[1]+wi*0.5
+  xright<-xleft+w
+  h<-1500   
+  ybottom<-par("usr")[3]+he*0.05
+  ytop<-ybottom+h
+  print(c(xleft,ybottom,xright,ytop))
+  rect(xleft,ybottom,xright,ytop,col="white",border="black")
+  rect(xright,ybottom,xright+w,ytop,col="black",border="black")
+  text(xright+w,ybottom+(ytop-ybottom)/2,labels=lab,adj=c(-0.2,0.5),cex=0.55,font=2)
+  #points(par("usr")[1]+wi*0.6,par("usr")[3]+he*0.6,cex=5)
+}
+lscale()
+
 
 z<-lulc[["LULC2011"]]
 z<-mask(z,st_transform(st_as_sf(mappingzone),crs(z)))
 
+can<-st_as_sf(raster::getData("GADM", country = "CAN", level = 1))
+usa<-st_as_sf(raster::getData("GADM", country = "USA", level = 1))
+#que<-can[can$NAME_1=="Québec",]
+ne<-rbind(can,usa)
+plot(st_geometry(ne),axes=TRUE)
+ne<-st_crop(ne,c(xmin=-100,ymin=30,xmax=-45,ymax=70))
+ne<-st_make_valid(ne)
+ne<-st_union(ne)
+ne<-ms_simplify(ne,keep=0.03)
+
+png("C:/Users/God/Downloads/location_map.png",width=8,height=8,units="in",res=200,pointsize=11)
+lim<-c(-85,40,-55,55)
+plot(st_geometry(ne),border=NA,col="grey90",axes=TRUE,bg="lightblue",xlim=lim[c(1,3)],ylim=lim[c(2,4)])
+plot(lakes110,col="lightskyblue",border=NA,add=TRUE)
+plot(st_geometry(ne),border=gray(0,0.1),col=NA,add=TRUE,lwd=0.1)
+plot(st_geometry(st_transform(st_as_sf(mappingzone),st_crs(ne))),col=NA,border="black",lwd=0.2,add=TRUE)
+mtext(side=3,line=0.25,text="Location of study area",font=2,cex=1.5,adj=0.025)
+box(col="grey60")
+dev.off()
+file.show("C:/Users/God/Downloads/location_map.png")
 
 lccnames$used<-c("other","water","other","urban","wetland","wetland","wetland","wetland","agriculture","agriculture","shrub","forest")
-cols<-c(other="grey10",water="lightskyblue",urban="grey50",wetland="tan4",agriculture="palegoldenrod",shrub="yellowgreen",forest="forestgreen")
+cols<-c(other="grey10",water="lightskyblue",urban="grey50",wetland="tan4",agriculture="khaki",shrub="yellowgreen",forest="forestgreen")
 lccnames$cols<-adjustcolor(cols[match(lccnames$used,names(cols))],0.8)
-  
+
 png("C:/Users/God/Downloads/lcc_map.png",width=7,height=4,units="in",res=300,pointsize=11)
 par(mar=c(0,0,0,8))
 plot(z,col=lccnames$cols,breaks=c(0,lccnames$classn),axis.args=arg,xlim=xlim,ylim=ylim,zlim=c(0,220),legend=FALSE,legend.width=1,legend.shrink=1.25,axes=TRUE,bty="n")
-legend("right",legend=unique(lccnames$used),fill=unique(lccnames$cols),bty="n",border=NA,cex=1.2,xpd=TRUE,y.intersp=1.25,inset=c(-0.25,0))
 locs<-ds[ds$id!="map" & !duplicated(ds@data[,c("longitude","latitude")]),]
-plot(st_geometry(st_transform(st_as_sf(locs),proj4string(lulc))),cex=0.8,pch=16,col=adjustcolor("firebrick",0.6),add=TRUE)
+plot(st_geometry(st_transform(st_as_sf(locs),proj4string(lulc))),cex=1,pch=16,col=adjustcolor("firebrick",0.6),add=TRUE)
+name<-unique(lccnames$used)
+legend("topright",legend=paste0(toupper(substr(name, 1, 1)), substr(name, 2, nchar(name))),fill=unique(lccnames$cols),bty="n",border=NA,cex=1.2,xpd=TRUE,y.intersp=1.15,inset=c(-0.27,0))
+legend("topright",legend=" Trap location",pch=16,col=adjustcolor("firebrick",0.6),bty="n",border=NA,cex=1.2,xpd=TRUE,inset=c(-0.305,0.44))
+lscale()
 box(col="white")
+mtext(side=3,line=-1.75,text="Study area and land cover classes",adj=0.05,font=2,cex=1.25)
 dev.off()
 file.show("C:/Users/God/Downloads/lcc_map.png")
+
+
+### Combine location maps ###################################
+
+im1<-image_read("C:/Users/God/Downloads/location_map.png")
+im2<-image_read("C:/Users/God/Downloads/lcc_map.png")
+
+im<-image_composite(im2, image_scale(im1,"x565"),gravity="southeast",offset="+150+0")
+
+image_write(im,"C:/Users/God/Downloads/location.png")
+file.show("C:/Users/God/Downloads/location.png")
+
+
+
+
+
 
 
 
