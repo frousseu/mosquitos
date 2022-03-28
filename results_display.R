@@ -1056,6 +1056,7 @@ im<-image_scale(im[1],"x700")
 image_write(im,"C:/Users/God/Downloads/reduced_mosquito_posteriors_all.png")
 #file.show("C:/Users/God/Downloads/reduced_mosquito_dic_tables.png")
 
+
 ### Combine animations ######################################
 
 images<-list.files("C:/Users/God/Downloads",pattern="*predicted_abundance.gif",full.names=TRUE)
@@ -1086,28 +1087,9 @@ image_write(im,"C:/Users/God/Downloads/reduced_mosquito_animations.gif")
 #file.show("C:/Users/God/Downloads/reduced_mosquito_animations.gif")
 
 
-
-### Show traps in mapping zone #######################
-
-l<-split(ds[!ds$db%in%"map",],ds$year[!ds$db%in%"map"])
-par(mfrow=n2mfrow(length(l)),mar=c(0.25,0.25,0.25,0.25))
-lapply(l,function(i){
-  x<-i[!duplicated(i$longitude),]
-  print(nrow(x))
-  plot(x,col="white")
-  plot(Q,add=TRUE,col="grey90",border="white")
-  plot(x,add=TRUE,pch=16,cex=1,col="forestgreen")
-  plot(st_geometry(reg),add=TRUE,border=gray(0,0.15),lwd=3)
-  mtext(i$year[1],side=3,adj=c(0,0),line=-1.25)
-})
-par(mfrow=c(1,1))
-
-
-### Show trap counts in mapping zone #################
-
-
 ### Study area map with lcc ################################################
 
+# add a scale on map
 lscale<-function(w=10000,lab="20 km"){
   wi<-diff(par("usr")[c(1,2)])
   he<-diff(par("usr")[c(3,4)])
@@ -1120,17 +1102,22 @@ lscale<-function(w=10000,lab="20 km"){
   rect(xleft,ybottom,xright,ytop,col="white",border="black")
   rect(xright,ybottom,xright+w,ytop,col="black",border="black")
   text(xright+w,ybottom+(ytop-ybottom)/2,labels=lab,adj=c(-0.2,0.5),cex=0.55,font=2)
-  #points(par("usr")[1]+wi*0.6,par("usr")[3]+he*0.6,cex=5)
 }
-lscale()
 
-
+l<-list.files(file.path(path,"LULC/LULC/"),pattern=".tif",full.names=TRUE)
+l<-l[substr(l,nchar(l)-3,nchar(l))==".tif"]
+lulc<-stack(l)
+water<-lulc[["LULC2011"]]
+water<-rast(water)
+water<-crop(water,st_transform(st_as_sf(mappingzone),crs=crs(water)))
+water[water!=20]<-NA
+water<-ms_simplify(st_union(st_transform(st_as_sf(as.polygons(water)),crs=crs(ds))),0.05)
 z<-lulc[["LULC2011"]]
 z<-mask(z,st_transform(st_as_sf(mappingzone),crs(z)))
 
+
 can<-st_as_sf(raster::getData("GADM", country = "CAN", level = 1))
 usa<-st_as_sf(raster::getData("GADM", country = "USA", level = 1))
-#que<-can[can$NAME_1=="Québec",]
 ne<-rbind(can,usa)
 plot(st_geometry(ne),axes=TRUE)
 ne<-st_crop(ne,c(xmin=-100,ymin=30,xmax=-45,ymax=70))
@@ -1138,13 +1125,14 @@ ne<-st_make_valid(ne)
 ne<-st_union(ne)
 ne<-ms_simplify(ne,keep=0.03)
 
+
 png("C:/Users/God/Downloads/location_map.png",width=8,height=8,units="in",res=200,pointsize=11)
 lim<-c(-85,40,-55,55)
 plot(st_geometry(ne),border=NA,col="grey90",axes=TRUE,bg="lightblue",xlim=lim[c(1,3)],ylim=lim[c(2,4)])
 plot(lakes110,col="lightskyblue",border=NA,add=TRUE)
 plot(st_geometry(ne),border=gray(0,0.1),col=NA,add=TRUE,lwd=0.1)
-plot(st_geometry(st_transform(st_as_sf(mappingzone),st_crs(ne))),col=NA,border="black",lwd=0.2,add=TRUE)
-mtext(side=3,line=0.25,text="Location of study area",font=2,cex=1.5,adj=0.025)
+plot(st_geometry(st_transform(st_as_sf(mappingzone),st_crs(ne))),col=gray(0,0.15),border="red",lwd=0.5,add=TRUE)
+mtext(side=3,line=0.25,text="Location of study area",font=2,cex=2,adj=0.025)
 box(col="grey60")
 dev.off()
 file.show("C:/Users/God/Downloads/location_map.png")
@@ -1167,27 +1155,60 @@ mtext(side=3,line=-1.75,text="Study area and land cover classes",adj=0.05,font=2
 dev.off()
 file.show("C:/Users/God/Downloads/lcc_map.png")
 
-
-### Combine location maps ###################################
-
 im1<-image_read("C:/Users/God/Downloads/location_map.png")
 im2<-image_read("C:/Users/God/Downloads/lcc_map.png")
-
 im<-image_composite(im2, image_scale(im1,"x565"),gravity="southeast",offset="+150+0")
-
+#im3<-image_read("C:/Users/God/Downloads/trap_year.png")
+#im<-image_append(c(im,image_scale(im3,"x1350")),stack=TRUE)
 image_write(im,"C:/Users/God/Downloads/location.png")
 file.show("C:/Users/God/Downloads/location.png")
 
 
 
+### Show traps in mapping zone #######################
+
+l<-split(ds[!ds$db%in%"map",],ds$year[!ds$db%in%"map"])
+
+png("C:/Users/God/Downloads/trap_year.png",width=6,height=4,units="in",res=200,pointsize=11)
+par(mfrow=n2mfrow(length(l)),mar=c(0,0,0,0),oma=c(0,0,0,0))
+lapply(l,function(i){
+  x<-i[!duplicated(i$longitude),]
+  plot(mappingzone,col="grey90",border=NA)
+  plot(water,col="lightblue",border=NA,add=TRUE)
+  bb<-st_as_sfc(st_bbox(mappingzone))
+  plot(st_difference(bb,st_as_sf(mappingzone)),col="white",border=NA,add=TRUE)
+  plot(x,pch=16,cex=0.6,col=adjustcolor("firebrick",0.8),add=TRUE)
+  mtext(i$year[1],side=3,adj=c(0.1),line=-1.5,cex=0.5,font=2)
+})
+dev.off()
+file.show("C:/Users/God/Downloads/trap_year.png")
 
 
+### Show no. of traps by week #####################
 
+l<-split(ds[!ds$db%in%"map",],ds$week[!ds$db%in%"map"])
+names(l)<-sapply(l,function(i){i$week[1]})
+ee<-expand.grid(year=sort(unique(substr(names(l),1,4))),week=sort(unique(substr(names(l),6,8))))
+m<-match(apply(ee,1,function(i){paste(i[1],i[2],sep="_")}),names(l))
+ee$nbtraps<-sapply(m,function(i){if(is.na(i)){0}else{nrow(l[[i]])}})
+ee<-ee[order(ee$year,ee$week),]
+nbtraps<-split(ee,ee$year)
 
+png("C:/Users/God/Downloads/trap_weeks.png",width=5,height=7,units="in",res=200,pointsize=11)
+par(mfrow=c(length(nbtraps),1),mar=c(0.5,3,0,0),oma=c(3,0,0,0))
+lapply(nbtraps,function(i){
+  b<-barplot(i$nbtraps,names.arg=if(identical(i,nbtraps[[length(nbtraps)]])){i$week}else{NULL},ylim=c(0,max(ee$nbtraps)),border=NA,col="forestgreen",xpd=FALSE,yaxt="n")
+  text(b[,1],rep(-15,nrow(i)),i$nbtraps,cex=0.75,xpd=TRUE)
+  mtext(side=3,line=-1.5,text=i$year[1],adj=0.005)
+  rect(par("usr")[1],par("usr")[3],par("usr")[2],par("usr")[4],col = gray(0,0.05),border=NA)
+  axis(2,las=TRUE)
+  #grid()
+})
+dev.off()
+file.show("C:/Users/God/Downloads/trap_weeks.png")
 
 
 ### check lp combinations for lcc vars
-
 
 lpx<-lapply(names(vscale),function(i){
   bscale(lp[["agriculture50"]][,i],i)  
