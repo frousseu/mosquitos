@@ -924,6 +924,7 @@ invisible(lapply(1:ncol(matprob[,1:100]),function(i){
 }))
 points(h2$mids,h2$density,pch=16,cex=1.25,col=alpha("red",0.7))
 
+
 #### Explanatory/Predictive power #############################
 
 ff<-function(x){
@@ -944,6 +945,52 @@ cor(ff(m$summary.fitted.values[index[["est"]],quant]),ff(xs$sp))^2
 cor(ff(mfixed$summary.fitted.values[,quant]),ff(xs$sp))^2
 
 cor(ff(mfixedfull$summary.fitted.values[,quant]),ff(xs$sp))^2
+
+
+### Pseudo-R2 all species ####################################
+
+lm<-list.files(pattern="_model_outputs.RData")
+
+quant<-c("mean","0.5quant")
+
+rc2<-lapply(seq_along(lm),function(ii){
+  load(lm[ii])  
+  print(ii)
+  c(
+    mspatial=cor(ff(m$summary.fitted.values[index[["est"]],quant[1]]),ff(xs$sp))^2,
+    mspatialm=cor(ff(m$summary.fitted.values[index[["est"]],quant[2]]),ff(xs$sp))^2,
+    mfixed=cor(ff(mfixed$summary.fitted.values[,quant[1]]),ff(xs$sp))^2,
+    mfixedm=cor(ff(mfixed$summary.fitted.values[,quant[2]]),ff(xs$sp))^2,
+    mfixedfull=cor(ff(mfixed$summary.fitted.values[,quant[1]]),ff(xs$sp))^2,
+    mfixedfullm=cor(ff(mfixed$summary.fitted.values[,quant[2]]),ff(xs$sp))^2
+  )
+})
+
+r2<-data.frame(sp=rep(substr(lm,1,3),each=length(rc2[[1]])),model=names(unlist(rc2)),r2=unlist(rc2))
+#r2<-r2[,c(1,3,5)]
+cols<-adjustcolor(c("forestgreen","firebrick","dodgerblue"),0.5)
+colsa<-c(mspatial=cols[1],mspatialm=cols[1],mfixed=cols[2],mfixedm=cols[2],mfixedfull=cols[3],mfixedfullm=cols[3])
+r2$cols<-colsa[match(r2$model,names(colsa))]
+
+lr2<-split(r2,r2$sp)
+
+png("C:/Users/God/Downloads/mosquito_r2.png",width=8,height=4,units="in",res=200,pointsize=11)
+par(mfrow=c(1,4),mar=c(2,1,0,0),oma=c(0,3,1,1))
+ylim<-c(0,max(r2$r2))
+lapply(lr2,function(i){
+  b<-barplot(i$r2,names.arg="",col=i$cols,border=NA,yaxt="n",las=2,ylim=ylim)
+  mtext(side=1,line=1,text=i$sp[1],font=2,cex=1)
+  lines(c(b[1,1]-0.5,b[nrow(b),1]+0.5),c(0,0))
+  if(i$sp[1]=="CPR"){
+    axis(2,at=pretty(ylim*c(1,2),10),las=2,mgp=c(2,0.45,0),cex=1,font=2,tcl=-0.2)
+    mtext(side=2,line=2,text=expression("Pseudo-R"^2),font=2,cex=1)
+  }
+})
+par(new=TRUE,mfrow=c(1,1),mar=c(2,1,0,0),oma=c(0,3,1,1))
+plot(1,1,type="n",axes=FALSE)
+legend("topright",col=cols,pch=15,pt.cex=2,legend=c("Spatial + explanatory variables","Explanatory variables only","All explanatory variables"),title="Model",bty="n",cex=1,inse=c(0.05,0.05))
+dev.off()
+file.show("C:/Users/God/Downloads/mosquito_r2.png")
 
 
 #### SPDE posteriors ##########################################
