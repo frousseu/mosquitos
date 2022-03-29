@@ -18,7 +18,7 @@ Sys.setlocale("LC_ALL","English")
 
 ## RESULTS ##################################################
 
-load("VEX_model_outputs.RData")
+load("CQP_model_outputs.RData")
 
 ls()[sapply(ls(),function(i){
   obj<-paste0("\\b",i,"\\b")
@@ -934,7 +934,7 @@ ff<-function(x){
   }
 }
 
-quant<-c("mean","0.5quant")[1]
+quant<-c("mean","0.5quant")[2]
 
 par(mfrow=c(1,2))
 plot(ff(m$summary.fitted.values[index[["est"]],quant]),ff(xs$sp),asp=1)
@@ -943,7 +943,7 @@ par(mfrow=c(1,1))
 cor(ff(m$summary.fitted.values[index[["est"]],quant]),ff(xs$sp))^2
 cor(ff(mfixed$summary.fitted.values[,quant]),ff(xs$sp))^2
 
-
+cor(ff(mfixedfull$summary.fitted.values[,quant]),ff(xs$sp))^2
 
 
 #### SPDE posteriors ##########################################
@@ -1119,11 +1119,10 @@ z<-mask(z,st_transform(st_as_sf(mappingzone),crs(z)))
 can<-st_as_sf(raster::getData("GADM", country = "CAN", level = 1))
 usa<-st_as_sf(raster::getData("GADM", country = "USA", level = 1))
 ne<-rbind(can,usa)
-plot(st_geometry(ne),axes=TRUE)
 ne<-st_crop(ne,c(xmin=-100,ymin=30,xmax=-45,ymax=70))
 ne<-st_make_valid(ne)
-ne<-st_union(ne)
-ne<-ms_simplify(ne,keep=0.03)
+#ne<-st_union(ne)
+ne<-ms_simplify(ne,keep=0.02)
 
 
 png("C:/Users/God/Downloads/location_map.png",width=8,height=8,units="in",res=200,pointsize=11)
@@ -1140,6 +1139,8 @@ file.show("C:/Users/God/Downloads/location_map.png")
 lccnames$used<-c("other","water","other","urban","wetland","wetland","wetland","wetland","agriculture","agriculture","shrub","forest")
 cols<-c(other="grey10",water="lightskyblue",urban="grey50",wetland="tan4",agriculture="khaki",shrub="yellowgreen",forest="forestgreen")
 lccnames$cols<-adjustcolor(cols[match(lccnames$used,names(cols))],0.8)
+on<-c("agriculture","forest","shrub","urban","water","wetland","other")
+lccnames<-lccnames[order(lccnames$classn),]
 
 png("C:/Users/God/Downloads/lcc_map.png",width=7,height=4,units="in",res=300,pointsize=11)
 par(mar=c(0,0,0,8))
@@ -1147,7 +1148,8 @@ plot(z,col=lccnames$cols,breaks=c(0,lccnames$classn),axis.args=arg,xlim=xlim,yli
 locs<-ds[ds$id!="map" & !duplicated(ds@data[,c("longitude","latitude")]),]
 plot(st_geometry(st_transform(st_as_sf(locs),proj4string(lulc))),cex=1,pch=16,col=adjustcolor("firebrick",0.6),add=TRUE)
 name<-unique(lccnames$used)
-legend("topright",legend=paste0(toupper(substr(name, 1, 1)), substr(name, 2, nchar(name))),fill=unique(lccnames$cols),bty="n",border=NA,cex=1.2,xpd=TRUE,y.intersp=1.15,inset=c(-0.27,0))
+o<-order(match(name,on))
+legend("topright",legend=paste0(toupper(substr(name, 1, 1)), substr(name, 2, nchar(name)))[o],fill=unique(lccnames$cols)[o],bty="n",border=NA,cex=1.2,xpd=TRUE,y.intersp=1.15,inset=c(-0.27,0))
 legend("topright",legend=" Trap location",pch=16,col=adjustcolor("firebrick",0.6),bty="n",border=NA,cex=1.2,xpd=TRUE,inset=c(-0.305,0.44))
 lscale()
 box(col="white")
