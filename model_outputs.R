@@ -37,6 +37,24 @@ mfixed <- inla(fixed,data=cbind(y=xs$sp,xs@data),
                family="nbinomial")#"zeroinflatednbinomial1"
   
   
+# get all variables names
+lccs<-paste(unique(gsub("1000","",names(xs)[grep("1000",names(xs))])),collapse="|")
+vs<-names(xs)[grep(paste0(lccs,"|anom|tmean|prcp"),names(xs))]
+vs<-vs[-grep("CQ",vs)]
+
+fixedfull<-formula(paste0("y ~ -1 + ns(jul, knots = knots) + ",paste(vs,collapse="+")))
+
+mfixedfull <- inla(fixedfull,data=cbind(y=xs$sp,xs@data), 
+               control.predictor=list(compute=TRUE,link=1), 
+               #control.family=list(hyper=list(theta=prec.prior)), 
+               control.fixed=control.fixed,
+               control.inla = list(strategy='auto',int.strategy = "eb"),
+               num.threads="2:2",
+               verbose=TRUE,
+               control.compute=list(dic=TRUE,waic=FALSE,cpo=FALSE,config=TRUE),
+               family="nbinomial")#"zeroinflatednbinomial1"
+
+
 ### The best model with the spatial model ####################################
 m <- inla(model,data=inla.stack.data(stackfull), 
           control.predictor=list(compute=TRUE, A=inla.stack.A(stackfull),link=1), 
