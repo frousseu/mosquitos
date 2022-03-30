@@ -114,12 +114,13 @@ par(mfrow=c(1,1))
 
 #### Combine posteriors ########################################
 
+
 posteriors<-c(m$marginals.fixed,m$marginals.hyper)
 posteriors<-posteriors[!names(posteriors)%in%1:50 & !grepl("size|Stdev|Range",names(posteriors))]
 posteriors<-posteriors[rev(order(abs(sapply(posteriors,function(i){i[which.max(i[,2]),1]}))))]
 posteriors<-c(m$marginals.hyper,posteriors)
-names(posteriors)[1:3]<-c("Size for nbinom","Range","SD")
-posteriors<-posteriors[4:length(posteriors)]
+#names(posteriors)[1:3]<-c("Size for nbinom","Range","SD")
+posteriors<-posteriors[!names(posteriors)%in%names(m$marginals.hyper)]
 
 ## remove tail values that are not seeabje and that are extending xlim values for nothing
 par(mfrow=n2mfrow(length(posteriors),asp=1.49),mar=c(3,2.5,1,1))
@@ -961,13 +962,13 @@ rc2<-lapply(seq_along(lm),function(ii){
     mspatialm=cor(ff(m$summary.fitted.values[index[["est"]],quant[2]]),ff(xs$sp))^2,
     mfixed=cor(ff(mfixed$summary.fitted.values[,quant[1]]),ff(xs$sp))^2,
     mfixedm=cor(ff(mfixed$summary.fitted.values[,quant[2]]),ff(xs$sp))^2,
-    mfixedfull=cor(ff(mfixed$summary.fitted.values[,quant[1]]),ff(xs$sp))^2,
-    mfixedfullm=cor(ff(mfixed$summary.fitted.values[,quant[2]]),ff(xs$sp))^2
+    mfixedfull=cor(ff(mfixedfull$summary.fitted.values[,quant[1]]),ff(xs$sp))^2,
+    mfixedfullm=cor(ff(mfixedfull$summary.fitted.values[,quant[2]]),ff(xs$sp))^2
   )
 })
 
 r2<-data.frame(sp=rep(substr(lm,1,3),each=length(rc2[[1]])),model=names(unlist(rc2)),r2=unlist(rc2))
-#r2<-r2[,c(1,3,5)]
+r2<-r2[substr(r2$model,nchar(r2$model),nchar(r2$model))=="m",]
 cols<-adjustcolor(c("forestgreen","firebrick","dodgerblue"),0.5)
 colsa<-c(mspatial=cols[1],mspatialm=cols[1],mfixed=cols[2],mfixedm=cols[2],mfixedfull=cols[3],mfixedfullm=cols[3])
 r2$cols<-colsa[match(r2$model,names(colsa))]
@@ -981,14 +982,16 @@ lapply(lr2,function(i){
   b<-barplot(i$r2,names.arg="",col=i$cols,border=NA,yaxt="n",las=2,ylim=ylim)
   mtext(side=1,line=1,text=i$sp[1],font=2,cex=1)
   lines(c(b[1,1]-0.5,b[nrow(b),1]+0.5),c(0,0))
+  at<-pretty(ylim*c(1,2),20)
+  abline(h=at,lty=3,col=gray(0.3,0.4))
   if(i$sp[1]=="CPR"){
-    axis(2,at=pretty(ylim*c(1,2),10),las=2,mgp=c(2,0.45,0),cex=1,font=2,tcl=-0.2)
-    mtext(side=2,line=2,text=expression("Pseudo-R"^2),font=2,cex=1)
+    axis(2,at=at,las=2,mgp=c(2,0.45,0),cex=1,font=2,tcl=-0.2)
+    mtext(side=2,line=2.5,text=expression("Pseudo-R"^2),font=2,cex=1,xpd=TRUE)
   }
 })
 par(new=TRUE,mfrow=c(1,1),mar=c(2,1,0,0),oma=c(0,3,1,1))
 plot(1,1,type="n",axes=FALSE)
-legend("topright",col=cols,pch=15,pt.cex=2,legend=c("Spatial + explanatory variables","Explanatory variables only","All explanatory variables"),title="Model",bty="n",cex=1,inse=c(0.05,0.05))
+legend("topright",col=cols,pch=15,pt.cex=2,legend=c("Spatial + explanatory variables","Explanatory variables only","All explanatory variables"),title="Model",bty="o",cex=1,inse=c(0.05,0.1),box.lwd=0,box.col=gray(1,0.2))
 dev.off()
 file.show("C:/Users/God/Downloads/mosquito_r2.png")
 
@@ -1255,6 +1258,50 @@ lapply(nbtraps,function(i){
 })
 dev.off()
 file.show("C:/Users/God/Downloads/trap_weeks.png")
+
+
+### Observed range of variables #####################
+
+hlines<-function(h,col,...){
+  l<-list(
+    x=c(h$breaks[1],rep(h$breaks[-c(1,length(h$breaks))],each=2),tail(h$breaks,1)),
+    y=rep(h$density,each=2)
+  )
+  lapply(1:(length(l$x)-1),function(i){
+    lines(l$x[i+0:1],l$y[i+0:1],col=ifelse(l$y[i]==0,NA,col),...)
+  })
+}
+
+png("C:/Users/God/Downloads/exvar_coverage.png",width=10,height=6,units="in",res=300,pointsize=11)
+lccs<-paste(unique(gsub("1000","",names(xs)[grep("1000",names(xs))])),collapse="|")
+lccs<-names(xs)[grep(lccs,names(xs))]
+lccs<-lccs[!grepl("CQ|marsh50",lccs)]
+lccs<-sort(lccs)
+par(mfrow=n2mfrow(length(lccs),asp=2),mar=c(2,1,0,0),oma=c(0,0,0.5,0))
+lapply(lccs,function(i){
+  obs<-bscale(xs@data[,i],i)
+  pre<-bscale(xsmap@data[,i],i)  
+  brks<-seq(0,max(c(obs,pre,1)),by=0.025)
+  brks<-30
+  
+  xlim<-c(0,max(c(obs,pre)))
+  cols<-c("darkgreen","firebrick")
+  h1<-hist(obs,breaks=brks,plot=FALSE) 
+  h2<-hist(pre,breaks=brks,plot=FALSE)
+  #print(h1$density)
+  hist(obs,xlim=xlim,freq=FALSE,breaks=brks,ylim=c(0,max(h1$density,h2$density)),border=NA,col=adjustcolor(cols[1],0.5),main="",mgp=c(2,-0.25,0),tcl=-0.2,xaxt="n",yaxt="n")
+  par(new=TRUE)
+  hist(pre,xlim=xlim,freq=FALSE,breaks=brks,ylim=c(0,max(h1$density,h2$density)),border=NA,col=adjustcolor(cols[2],0.5),main="",mgp=c(2,-0.25,0),tcl=-0.2,xaxt="n",yaxt="n")
+  #lines(hlines(h2)$x,hlines(h2)$y,col=cols[2],lwd=ifelse(hlines(h2)$y==0,0,1))
+  #lines(hlines(h1)$x,hlines(h1)$y,col=cols[1],lwd=ifelse(hlines(h2)$y==0,0,1))
+  hlines(h2,col=cols[2],lwd=0.1)
+  hlines(h1,col=cols[1],lwd=0.1)
+  mtext(side=3,line=-0.5,adj=0.15,text=i,cex=0.6,font=2)
+  axis(1,at=pretty(xlim),font=2,cex.axis=0.5,lwd=0.2,lwd.ticks=0.2,mgp=c(2,-0.25,0),tcl=-0.2)
+  legend("topright",inset=c(0.05,0.1),legend=c("Observed","Predicted"),ncol=1,pch=22,pt.bg=adjustcolor(cols,0.5),col=cols,pt.cex=2,bty="n",pt.lwd=0.1,cex=0.7)
+})
+dev.off()
+file.show("C:/Users/God/Downloads/exvar_coverage.png")
 
 
 ### check lp combinations for lcc vars
