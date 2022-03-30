@@ -18,7 +18,7 @@ Sys.setlocale("LC_ALL","English")
 
 ## RESULTS ##################################################
 
-load("CQP_model_outputs.RData")
+load("VEX_model_outputs.RData")
 
 ls()[sapply(ls(),function(i){
   obj<-paste0("\\b",i,"\\b")
@@ -55,6 +55,9 @@ getlabels<-function(x){
   #print(v)
   paste(v[match(x,names(v))],x,sep=" - ")
 }
+
+frange<-function(x,n=10){seq(min(x,na.rm=TRUE),max(x,na.rm=TRUE),length.out=n)}
+
 
 # this determines the order of variables presented
 ov<-c("jul","anom2","anom7","anom30","anom90","prcp2","prcp7","prcp30","prcp90","agriculture50","agriculture1000","forest50","forest1000","urban50","urban1000","spatial")
@@ -332,7 +335,7 @@ file.show(file.path("C:/Users/God/Downloads",paste0(spcode,"marginal_effects_spa
 
 # The code for the graph below really sucks... should make it better...
 
-frange<-function(x,n=10){seq(min(x,na.rm=TRUE),max(x,na.rm=TRUE),length.out=n)}
+
 
 quantities<-c("mean","X0.025quant","X0.975quant","sd")
 xsmappred<-cbind(xsmap[,"id"],data.frame(m$summary.linear.predictor[index.map,gsub("X","",quantities)]))
@@ -995,6 +998,36 @@ legend("topright",col=cols,pch=15,pt.cex=2,legend=c("Spatial + explanatory varia
 dev.off()
 file.show("C:/Users/God/Downloads/mosquito_r2.png")
 
+
+### Species total ######################################
+
+lm<-list.files(pattern="_model_outputs.RData")
+
+sps<-c("CPR_","CQP_","SMG_","VEX_")
+
+png("C:/Users/God/Downloads/mosquito_counts.png",width=10,height=8,units="in",res=200,pointsize=11)
+par(mfrow=c(2,2),mar=c(4,1,0,0),oma=c(2.25,2.75,0,0))
+lapply(sps,function(i){
+  counts<-xs@data[,grep(i,names(xs))]
+  print(rev(sort(table(counts)))[1:5])
+  vals<-log(counts+1)
+  #brks<-frange(vals)
+  divs<-c(0,0.51,5,10,20,50,100,200,500,1000,2000,5000,10000,20000,35000,50000)
+  divs<-c(divs[divs<max(counts)],max(counts))    
+  brks<-log(divs+1)
+  h<-hist(vals,breaks=brks,plot=FALSE)
+  b<-barplot(h$counts/1000,yaxt="n",space=0,col=adjustcolor("darkgreen",0.5),border="darkgreen")
+  at<-b[,1]
+  lab<-paste0(round(exp(head(h$breaks,-1))-1+1,0)," - ",round(exp(tail(h$breaks,-1))-1,0))
+  lab[1:2]<-c("0","1 - 5")
+  axis(1,at=at,labels=lab,mgp=c(2,0.5,0),tcl=-0.2,cex.axis=0.75,font=2,las=2)
+  axis(2,at=pretty(1.3*(h$counts/1000),7),las=2,mgp=c(2,0.5,0),tcl=-0.2,cex.axis=0.75,font=2)
+  mtext(side=3,line=-4,text=gsub("_","",i),font=2,cex=2,adj=0.9)
+  mtext(side=2,line=1,outer=TRUE,text="Frequency (x 1000)",xpd=TRUE,font=2,cex=1.5)
+  mtext(side=1,line=1,outer=TRUE,text="Trap counts",xpd=TRUE,font=2,cex=1.5)
+})
+dev.off()
+file.show("C:/Users/God/Downloads/mosquito_counts.png")
 
 #### SPDE posteriors ##########################################
 
