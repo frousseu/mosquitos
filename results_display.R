@@ -1229,7 +1229,7 @@ lccnames<-lccnames[order(lccnames$classn),]
 png("C:/Users/God/Downloads/lcc_map.png",width=7,height=4,units="in",res=300,pointsize=11)
 par(mar=c(0,0,0,8))
 plot(z,col=lccnames$cols,breaks=c(0,lccnames$classn),axis.args=arg,xlim=xlim,ylim=ylim,zlim=c(0,220),legend=FALSE,legend.width=1,legend.shrink=1.25,axes=TRUE,bty="n")
-locs<-ds[ds$id!="map" & !duplicated(ds@data[,c("longitude","latitude")]),]
+locs<-ds[!ds$id%in%c("map1","map2") & !duplicated(ds@data[,c("longitude","latitude")]),]
 plot(st_geometry(st_transform(st_as_sf(locs),proj4string(lulc))),cex=1,pch=16,col=adjustcolor("firebrick",0.6),add=TRUE)
 name<-unique(lccnames$used)
 o<-order(match(name,on))
@@ -1253,7 +1253,7 @@ file.show("C:/Users/God/Downloads/location.png")
 
 ### Show traps in mapping zone #######################
 
-l<-split(ds[!ds$db%in%"map",],ds$year[!ds$db%in%"map"])
+l<-split(ds[!ds$db%in%c("map1","map2"),],ds$year[!ds$db%in%c("map1","map2")])
 
 png("C:/Users/God/Downloads/trap_year.png",width=6,height=4,units="in",res=200,pointsize=11)
 par(mfrow=n2mfrow(length(l)),mar=c(0,0,0,0),oma=c(0,0,0,0))
@@ -1272,7 +1272,7 @@ file.show("C:/Users/God/Downloads/trap_year.png")
 
 ### Show no. of traps by week #####################
 
-l<-split(ds[!ds$db%in%"map",],ds$week[!ds$db%in%"map"])
+l<-split(ds[!ds$db%in%c("map1","map2"),],ds$week[!ds$db%in%c("map1","map2")])
 names(l)<-sapply(l,function(i){i$week[1]})
 ee<-expand.grid(year=sort(unique(substr(names(l),1,4))),week=sort(unique(substr(names(l),6,8))))
 m<-match(apply(ee,1,function(i){paste(i[1],i[2],sep="_")}),names(l))
@@ -1366,7 +1366,7 @@ library(ggeffects)
 
 load("CQP_model_outputs.RData")
 
-dat<-xs@data[xs$db!="map",]
+dat<-xs@data[!xs$db%in%c("map1","map2"),]
 dat$y<-as.integer(dat$sp>0)
 
 knots1<-knots
