@@ -61,7 +61,7 @@ vifs<-lapply(unlist(models),function(i){
   v<-all.vars(i)
   v<-v[!v%in%c("y","knots","intercept","lognights","spatial","spde")]
   f<-formula(paste("VEX_Aedes_vexans~jul+",paste(v,collapse="+")))
-  mod<-lm(f,data=ds@data[ds@data$db!="map",])
+  mod<-lm(f,data=ds@data[!ds@data$db%in%c("map1","map2"),])
   #print(i)
   vif(mod)  
 })
@@ -97,7 +97,7 @@ xs$jul<-as.integer(format(as.Date(xs$date),"%j"))
 #vs<-unique(unlist(lapply(unlist(models),all.vars)))
 vs<-names(xs)[grep("jul|50|1000|anom|prcp|tmean",names(xs))]
 vs<-vs[!vs%in%c("lognights","spde","knots","y","spatial")]
-vscale<-lapply(xs@data[xs$db!="map",vs],function(i){c(mean=mean(i),sd=sd(i))})
+vscale<-lapply(xs@data[!xs$db%in%c("map1","map2"),vs],function(i){c(mean=mean(i),sd=sd(i))})
 xs@data[vs]<-lapply(vs,function(i){(xs@data[[i]]-vscale[[i]][1])/vscale[[i]][2]})
 bscale<-function(x,v=NULL){
   (x*vscale[[v]]["sd"])+vscale[[v]]["mean"]
@@ -133,8 +133,8 @@ par(mfrow=c(1,1),mar=c(0,0,0,0))
 
 if(TRUE){
   xs2<-st_as_sf(xs)
-  xs2map<-xs2[xs2$db=="map",]
-  xs2<-xs2[xs2$db!="map",]
+  xs2map<-xs2[xs2$db=="map1",]
+  xs2<-xs2[!xs2$db%in%c("map1","map2"),]
   
   predmap<-st_buffer(concaveman(xs2,2.5),0)
   plot(st_geometry(predmap))
@@ -156,7 +156,7 @@ if(TRUE){
 }
 
 
-edge<-0.5
+edge<-2
 #domain <- inla.nonconvex.hull(coordinates(ds),convex=-0.015, resolution = c(100, 100))
 #mesh<-inla.mesh.2d(loc.domain=coordinates(ds),max.edge=c(edge,3*edge),offset=c(edge,1*edge),cutoff=edge,boundary=domain,crs=CRS(proj4string(xs)))
 #domain <- inla.nonconvex.hull(coordinates(xs2pts),convex = -0.15, concave = 0.5, resolution = c(340,340))
@@ -169,14 +169,14 @@ mesh<-inla.mesh.2d(loc.domain=NULL,max.edge=c(edge,3*edge),offset=c(edge,3*edge)
 plot(mesh,asp=1)
 plot(Q,col="grey90",border="white",add=TRUE,lwd=2)
 plot(mesh,asp=1,add=TRUE)
-plot(xs[!xs$db%in%"map",],add=TRUE,pch=16,col="forestgreen")
+plot(xs[!xs$db%in%c("map1","map2"),],add=TRUE,pch=16,col="forestgreen")
 plot(mappingzone,add=TRUE)
 mtext(side=3,line=-2,text=paste("edge =",edge,"km"),font=2,cex=1.5)
 
 
 #### Restrict predictions ######################################
-xsmap<-xs[xs$db=="map",]
-xs<-xs[xs$db!="map",]
+xsmap<-xs[xs$db%in%c("map1"),]
+xs<-xs[!xs$db%in%c("map1","map2"),]
 
 #### SPDE #################################################
 spde <- inla.spde2.pcmatern(
@@ -248,7 +248,7 @@ inla.pc.dgamma(x, lambda = 1, log = FALSE)
 #model <- y ~ -1 + intercept + jul + julsquare + forest50 + urban50 + urban1000 + agriculture1000  + tmax7 + tmax2 + prcp30 + f(spatial, model=spde, group=spatial.group,control.group=list(model='ar1', hyper=h.spec))
 
 # using knots allow to fix the values for each jul across newdata
-knots<-seq(min(xs$jul)+0.15,max(xs$jul)-0.15,length.out=8)
+knots<-seq(min(xs$jul)+0.005,max(xs$jul)-0.005,length.out=10)
 #knots<-c(-2.25,-1.25,0,1,2)
 #knots<-seq(-2.25,0,length.out=5)
 

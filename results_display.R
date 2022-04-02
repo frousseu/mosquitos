@@ -1023,6 +1023,7 @@ lapply(sps,function(i){
   axis(1,at=at,labels=lab,mgp=c(2,0.5,0),tcl=-0.2,cex.axis=0.75,font=2,las=2)
   axis(2,at=pretty(1.3*(h$counts/1000),7),las=2,mgp=c(2,0.5,0),tcl=-0.2,cex.axis=0.75,font=2)
   mtext(side=3,line=-4,text=gsub("_","",i),font=2,cex=2,adj=0.9)
+  mtext(side=3,line=-6,text=paste(sum(counts),"ind."),font=2,cex=1.5,adj=0.9)
   mtext(side=2,line=1,outer=TRUE,text="Frequency (x 1000)",xpd=TRUE,font=2,cex=1.5)
   mtext(side=1,line=1,outer=TRUE,text="Trap counts",xpd=TRUE,font=2,cex=1.5)
 })

@@ -38,11 +38,14 @@ mfixed <- inla(fixed,data=cbind(y=xs$sp,xs@data),
   
   
 # get all variables names
-lccs<-paste(unique(gsub("1000","",names(xs)[grep("1000",names(xs))])),collapse="|")
-vs<-names(xs)[grep(paste0(lccs,"|anom|tmean|prcp"),names(xs))]
-vs<-vs[-grep("CQ",vs)]
+#xs@data<-cbind(xs@data,setNames(do.call("data.frame",lapply(1:35,function(i){rnorm(nrow(xs),0,1)})),paste0("yyy",1:35,"1000")))
 
-fixedfull<-formula(paste0("y ~ -1 + ns(jul, knots = knots) + ",paste(vs,collapse="+")))
+lccs<-paste(unique(gsub("1000","",names(xs)[grep("1000",names(xs))])),collapse="|")
+vss<-names(xs)[grep(paste0(lccs,"|anom|tmean|prcp"),names(xs))]
+#vss<-names(xs)[grep("yyy",names(xs))]
+vss<-vss[!grepl("CQ",vss)]
+
+fixedfull<-formula(paste0("y ~ -1 + ns(jul, knots = knots) + ",paste(vss,collapse="+")))
 
 mfixedfull <- inla(fixedfull,data=cbind(y=xs$sp,xs@data), 
                control.predictor=list(compute=TRUE,link=1), 
@@ -94,3 +97,5 @@ zeroprob<-sampleshyper[,grep("probability",dimnames(sampleshyper)[[2]])]
 save.image(paste0(spcode,"model_outputs.RData"))
 
 print("Done !")
+
+

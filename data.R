@@ -303,7 +303,7 @@ lapply(i,function(j){
 par(mfrow=c(1,1))
 
 #### By year ###########################################
-l<-split(ds[!ds$db%in%"map",],ds$year[!ds$db%in%"map"])
+l<-split(ds[!ds$db%in%c("map1","map2"),],ds$year[!ds$db%in%c("map1","map2")])
 par(mfrow=n2mfrow(length(l)),mar=c(0.25,0.25,0.25,0.25))
 lapply(l,function(i){
   x<-i[!duplicated(i$longitude),]
@@ -317,7 +317,7 @@ lapply(l,function(i){
 par(mfrow=c(1,1))
 
 #### By weeks ###########################################
-l<-split(ds[!ds$db%in%"map",],ds$week[!ds$db%in%"map"])
+l<-split(ds[!ds$db%in%c("map1","map2"),],ds$week[!ds$db%in%c("map1","map2")])
 names(l)<-sapply(l,function(i){i$week[1]})
 ee<-expand.grid(year=sort(unique(substr(names(l),1,4))),week=sort(unique(substr(names(l),6,8))))
 m<-match(apply(ee,1,function(i){paste(i[1],i[2],sep="_")}),names(l))
@@ -334,7 +334,7 @@ lapply(1:nrow(ee),function(j){
     i<-l[[m]]
     x<-i[!duplicated(i$longitude) & !duplicated(i$longitude),]
     print(nrow(x))
-    plot(x,col="white",xlim=bbox(ds[ds$db!="map",])[1,],ylim=bbox(ds[ds$db!="map",])[2,])
+    plot(x,col="white",xlim=bbox(ds[!ds$db%in%c("map1","map2"),])[1,],ylim=bbox(ds[!ds$db%in%c("map1","map2"),])[2,])
     plot(Q,add=TRUE,col="grey90",border="white")
     plot(x,add=TRUE,pch=16,cex=0.5,col=gray(0,0.75))
     mtext(i$week[1],side=3,adj=c(0,0),line=-0.5,cex=0.4)
@@ -402,11 +402,12 @@ axis(2,at=1:nlevels(x$id),labels=levels(x$id),las=2,cex.axis=0.35)
 
 ### Build mapping zone #############################
 
-mappingzone<-concaveman(coordinates(ds[ds$db!="map",]),2)
+mappingzone<-concaveman(coordinates(ds[!ds$db%in%c("map1","map2"),]),2)
 mappingzone<-gBuffer(spPolygons(mappingzone,crs=CRS(proj4string(ds))),width=10)
 plot(mappingzone)
 plot(Q,add=TRUE,border="grey80")
 plot(ds,add=TRUE,pch=1)
+
 
 ### Build prediction grid ###################################
 
@@ -424,11 +425,10 @@ ee<-expand.grid(week=sort(unique(ds$week)))
 ee$id<-"map"
 ee$year<-as.integer(substr(ee$week,1,4))
 # need to specify day of week when converting week to date see https://stackoverflow.com/questions/9380435/how-to-parse-year-week-number-in-r
-ee$date<-as.Date(paste0(ee$week,3),format="%Y_W%U%u")
+ee$date<-as.Date(paste0(ee$week,4),format="%Y_W%U%u") # this creates 2003-07-10
 ee$jul<-as.integer(format(ee$date,"%j"))
 ee$date<-as.character(ee$date)
 ee$nights<-1
-ee$db<-"map"
 eesp<-as.data.frame(matrix(rep(NA,nrow(ee)*length(species)),ncol=length(species)))
 names(eesp)<-species
 ee<-cbind(ee,eesp)
@@ -446,7 +446,12 @@ proj4string(map)<-CRS(proj4string(ds))
 
 # subset predictions only for a given week (reduces extractions times/memory use)
 #map<-map[substr(map$week,6,8)%in%"W32",]
-map<-map[map$week%in%"2003_W32",]
+#map<-map[map$week%in%"2003_W32",]
+map1<-map[map$date=="2003-07-10",] # map that will be used for predictions
+map1$db<-"map1"
+map2<-map[map$year=="2003",] # map data that will be used for animations with posterior samples
+map2$db<-"map2"
+map<-rbind(map1,map2)
 
 # id region in case of spatial validation
 map$region<-st_join(st_as_sf(map),reg,join=st_intersects)$region
@@ -608,7 +613,7 @@ for(v in seq_along(weathervars)){
 #sum(x*p)/sum(p)
 
 
-plot(ds@data[ds$db!="map",unique(c("jul",names(ds)[grep("tmean|prcp",names(ds))]))])
+plot(ds@data[!ds$db%in%c("map1","map2"),unique(c("jul",names(ds)[grep("tmean|prcp",names(ds))]))])
 
 
 ### LULC data #########################################
@@ -707,12 +712,12 @@ ds$db<-gsub("pred","map",ds$db)
 options(scipen=20)
 rev(sort(sapply(ls(),function(i){object.size(get(i))})))/1024^2
 
-rm(e,lf,dsbuffer,can,map,info,coords,lbuffer,buffers,que,inspq,gdg);gc();gc()
+rm(e,lf,dsbuffer,can,map,map1,map2,info,coords,lbuffer,buffers,que,inspq,gdg);gc();gc()
 
 ##### Check if lcc OK ############################################
 
 par(mar=c(0,0,0,0),oma=c(0,0,0,0))
-plot(ds[ds$db=="map",],pch=21,cex=0.5,col=NA,bg=gray(scales::rescale(ds$urban1000[ds$db=="map"],c(0.05,0.99))))
+plot(ds[ds$db=="map1",],pch=21,cex=0.5,col=NA,bg=gray(scales::rescale(ds$urban1000[ds$db=="map1"],c(0.05,0.99))))
 
 ##### Show locations and % #######################################
 #x<-ds[!duplicated(ds$idlulc),]
@@ -735,31 +740,37 @@ plot(ds[ds$db=="map",],pch=21,cex=0.5,col=NA,bg=gray(scales::rescale(ds$urban100
 #### Pairwise #################################################
 vars<-names(ds)[grep("jul|tmean|tmin|tmax|prcp|anom|forest|agriculture|water|urban|pond|swamp|pasture|crop|wet|barren",names(ds))]
 vars<-vars[-grep("CQ",vars)]
-corrplot(cor(ds@data[ds@data$db!="map",vars]),method="number",number.cex=0.5)
+corrplot(cor(ds@data[!ds@data$db%in%c("map1","map2"),vars]),method="number",number.cex=0.5)
 
 par(mar=c(0,0,0,0),oma=c(4,4,1,1))
-plot(ds@data[ds@data$db!="map",vars[grep("jul|tmean|anom|prcp",vars)]],pch=16,cex=0.5,col=gray(0,0.1))
+plot(ds@data[!ds@data$db%in%c("map1","map2"),vars[grep("jul|tmean|anom|prcp",vars)]],pch=16,cex=0.5,col=gray(0,0.1))
 
 par(mar=c(0,0,0,0),oma=c(4,4,1,1))
-plot(ds@data[ds@data$db!="map",vars[grep("tmean|tmin|tmax",vars)]],pch=16,cex=0.5,col=gray(0,0.1))
+plot(ds@data[!ds@data$db%in%c("map1","map2"),vars[grep("tmean|tmin|tmax",vars)]],pch=16,cex=0.5,col=gray(0,0.1))
 
 ws<-vars[grep("jul|tmean|prcp|anom",vars)]
 #ws<-vars[grep("jul|anom",vars)]
 ws<-ws[-grep("square",ws)]
 par(mar=c(0,0,0,0),oma=c(4,4,1,1))
-plot(ds@data[ds@data$db!="map",ws],pch=16,cex=0.5,col=gray(0,0.075))
+plot(ds@data[!ds@data$db%in%c("map1","map2"),ws],pch=16,cex=0.5,col=gray(0,0.075))
 
 ws<-vars[grep("agriculture|forest|shrub|urban|wetland",vars)]
 par(mar=c(0,0,0,0),oma=c(4,4,1,1))
-plot(ds@data[ds@data$db!="map",ws],pch=16,cex=0.5,col=gray(0,0.075))
-cor(ds@data[ds@data$db!="map",ws])
+plot(ds@data[!ds@data$db%in%c("map1","map2"),ws],pch=16,cex=0.5,col=gray(0,0.075))
+cor(ds@data[!ds@data$db%in%c("map1","map2"),ws])
+
+ws<-vars[grep("jul|tmean|anom",vars)]
+#ws<-vars[grep("jul|anom",vars)]
+ws<-ws[-grep("square",ws)]
+par(mar=c(0,0,0,0),oma=c(4,4,1,1))
+plot(ds@data[!ds@data$db%in%c("map1","map2"),ws],pch=16,cex=0.5,col=gray(0,0.075))
 
 #### VIF ######################################################
 
 ### check vif for specific model
-mo<-lm(VEX_Aedes_vexans~jul+urban1000+forest1000+wetland1000+tmax7+prcp7,data=ds@data[ds@data$db!="map",])
+mo<-lm(VEX_Aedes_vexans~jul+urban1000+forest1000+wetland1000+tmax7+prcp7,data=ds@data[!ds@data$db%in%c("map1","map2"),])
 vif(mo)
-hist(unique(apply(ds@data[ds@data$db!="map",names(model.frame(mo)[,-1])],1,sum)),xlim=0:1)
+hist(unique(apply(!ds@data[ds@data$db%in%c("map1","map2"),names(model.frame(mo)[,-1])],1,sum)),xlim=0:1)
 
 ### check vif for all combinations of lcc and climate
 ws1<-vars[grep("agriculture|forest|shrub|urban|wetland",vars)]
@@ -774,7 +785,7 @@ registerDoParallel(detectCores()-1)
 getDoParWorkers()
 v<-foreach(i=seq_along(mo),.packages=c("car","sp")) %dopar% {
   f<-formula(paste("VEX_Aedes_vexans~jul+",paste(mo[[i]],collapse="+")))
-  mod<-lm(f,data=ds@data[ds@data$db!="map",])
+  mod<-lm(f,data=ds@data[!ds@data$db%in%c("map1","map2"),])
   #print(i)
   vif(mod)  
 }
@@ -784,6 +795,8 @@ v<-cbind(model=sapply(mo,paste,collapse=" + "),v)
 v[apply(v,1,function(i){any(i[-1]>3)}),]
 
 
-vif(lm(VEX_Aedes_vexans~urban1000+forest1000+agriculture1000,data=ds@data[ds@data$db!="map",]))
+vif(lm(VEX_Aedes_vexans~urban1000+forest1000+agriculture1000,data=ds@data[!ds@data$db%in%c("map1","map2"),]))
+
+vif(lm(VEX_Aedes_vexans~jul+julsquare+tmean90,data=ds@data[!ds@data$db%in%c("map1","map2"),]))
 
 #save.image("data.RData")
