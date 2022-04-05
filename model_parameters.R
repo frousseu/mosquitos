@@ -73,12 +73,13 @@ cat("\014")
 inla.setOption(inla.mode="experimental")
 year<-c(2003:2016);
 weeks<-10:50
-spcode<-c("VEX_","CPR_","CQP_","SMG_")[4] # change index to change species
+spcode<-c("VEX_","CPR_","CQP_","SMG_")[1] # change index to change species
 lweeks<-lapply(year,function(i){list(i,weeks)})
 #lweeks<-list(list(2014,weeks),list(2015,29:32))
 weeks<-apply(do.call("rbind",lapply(lweeks,function(i){expand.grid(year=i[[1]],week=i[[2]])})),1,function(i){paste(i[1],i[2],sep="_W")})
 xs<-ds[ds$year%in%year,]
 sp<-names(xs)[grep(spcode,names(xs))]
+xs$SMG_Ochlerotatus_stimulans_gr<-xs$SMG_Ochlerotatus_stimulans_gr+xs$STM_Ochlerotatus_stimulans+xs$FIT_Ochlerotatus_fitchii+xs$RIP_Ochlerotatus_riparius
 xs$sp<-xs@data[,sp]
 xs<-xs[xs$week%in%weeks,]
 xs<-xs[order(xs$week),]
@@ -142,7 +143,7 @@ if(TRUE){
   xs2map<-xs2map[predmap,]
   plot(st_geometry(xs2map),add=TRUE)
   
-  set.seed(12345) #1234
+  set.seed(123) #1234
   xs3pts<-as(st_sample(st_as_sf(mappingzone),10000),"Spatial")
   xs2pts<-as(st_cast(predmap,"MULTIPOINT"),"Spatial")
   xs2<-as(xs2,"Spatial")
@@ -156,7 +157,7 @@ if(TRUE){
 }
 
 
-edge<-2
+edge<-0.5
 #domain <- inla.nonconvex.hull(coordinates(ds),convex=-0.015, resolution = c(100, 100))
 #mesh<-inla.mesh.2d(loc.domain=coordinates(ds),max.edge=c(edge,3*edge),offset=c(edge,1*edge),cutoff=edge,boundary=domain,crs=CRS(proj4string(xs)))
 #domain <- inla.nonconvex.hull(coordinates(xs2pts),convex = -0.15, concave = 0.5, resolution = c(340,340))
@@ -248,14 +249,17 @@ inla.pc.dgamma(x, lambda = 1, log = FALSE)
 #model <- y ~ -1 + intercept + jul + julsquare + forest50 + urban50 + urban1000 + agriculture1000  + tmax7 + tmax2 + prcp30 + f(spatial, model=spde, group=spatial.group,control.group=list(model='ar1', hyper=h.spec))
 
 # using knots allow to fix the values for each jul across newdata
-knots<-seq(min(xs$jul)+0.005,max(xs$jul)-0.005,length.out=10)
+knots<-seq(min(xs$jul)+0.05,max(xs$jul)-0.05,length.out=10)
 #knots<-c(-2.25,-1.25,0,1,2)
 #knots<-seq(-2.25,0,length.out=5)
 
 v<-setdiff(unique(unlist(lapply(unlist(models),all.vars))),c("y","spatial","intercept","spde","year","knots","lognights")) 
 
 #### Priors on fixed effects ##############################
-vals<-list(intercept=1/35^2,default=1/35^2) #5-30
+# not used anymore
+vals<-list(intercept=1/30^2,default=1/30^2) #5-30
+spline<-setNames(as.list(rep(1/1^2,length(knots)+1)),1:(length(knots)+1))
+vals<-c(vals,spline)
 control.fixed<-list(prec=vals,mean=list(intercept=0,default=0),expand.factor.strategy = "inla")
 
 #### Newdata ########################################
