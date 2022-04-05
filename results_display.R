@@ -18,7 +18,7 @@ Sys.setlocale("LC_ALL","English")
 
 ## RESULTS ##################################################
 
-load("VEX_model_outputs.RData")
+load("SMG_model_outputs.RData")
 
 ls()[sapply(ls(),function(i){
   obj<-paste0("\\b",i,"\\b")
@@ -463,16 +463,23 @@ nparams<-sapply(params,function(i){
   #grep(paste0(i,":"),row.names(samples[[1]]$latent))  
   match(paste0(i,":1"),row.names(samples[[1]]$latent)) 
 }) 
-yearpred<-"2003"
+#yearpred<-"2003"
 #nweights<-grep("spatial",row.names(samples[[1]]$latent))
 Amapp<-inla.spde.make.A(mesh=mesh,loc=coordinates(xsmap)) 
 Amapmatrix<-as.matrix(Amapp)
 
-days<-seq(min(xs$jul[xs$year==yearpred]),max(xs$jul[xs$year==yearpred]),length.out=20)
+xsmap2<-split(ds[ds$db=="map2",],ds$date[ds$db=="map2"])
+
+#days<-seq(min(xs$jul[xs$year==yearpred]),max(xs$jul[xs$year==yearpred]),length.out=20)
+dates<-sort(unique(ds$date[ds$db=="map2"]))
+days<-(as.integer(format(as.Date(dates),"%j"))-vscale$jul["mean"])/vscale$jul["sd"]
+yearpred<-substr(dates[1],1,4)
+
 lpr<-foreach(j=seq_along(days),.packages=c("raster")) %do% {
   juls<-lp[["jul"]][which.min(abs(lp[["jul"]]$jul-days[j])),,drop=FALSE]
   standardv<-names(nparams)[!names(nparams)%in%c("intercept","jul","julsquare",1:50)]
-  dat<-as.matrix(xsmap@data[,standardv])
+  #dat<-as.matrix(xsmap@data[,standardv])
+  dat<-as.matrix(xsmap2[[dates[j]]]@data[,standardv])
   dat<-cbind(dat,data.frame(jul=days[j],julsquare=days[j]^2)[rep(1,nrow(dat)),])
   dat<-cbind(dat,juls[,names(juls)%in%paste0("X",1:50)][rep(1,nrow(dat)),])
   dat<-cbind(intercept=1,dat)
@@ -513,6 +520,7 @@ zlim2<-range(c(sapply(lpr,function(i){range(values(i),na.rm=TRUE)}),xs$sp[xs$yea
 zlim<-c(zlim1[1],zlim2[2])
 
 xs2<-xs[xs$year==yearpred,]
+#xs2<-ds[ds$db=="map2",]
 climate<-aggregate(.~date,data=xs2@data[,c("date",names(xs2)[grep("anom|tmean|prcp",names(xs2))])],mean)
 climate$date<-as.Date(climate$date)
 climate[names(climate)[-1]]<-lapply(names(climate)[-1],function(i){bscale(climate[,i],i)})
@@ -592,9 +600,19 @@ lapply(seq_along(lpr),function(i){
 })
 dev.off()
 animation <- image_animate(img, fps = 2, optimize = TRUE)
-image_write(animation,file.path("C:/Users/God/Downloads",paste0(paste0(spcode,yearpred),"predicted_abundance.gif")))
-file.show(file.path("C:/Users/God/Downloads",paste0(paste0(spcode,yearpred),"predicted_abundance.gif")))
+image_write(animation,file.path("C:/Users/God/Downloads",paste0(paste0(spcode,yearpred),"predicted_abundance2.gif")))
+file.show(file.path("C:/Users/God/Downloads",paste0(paste0(spcode,yearpred),"predicted_abundance2.gif")))
 
+
+
+#### check weather across season ########################################
+
+temp<-lapply(xsmap2,function(i){
+  pr<-rasterize(i,pgrid,field="tmean2",fun=mean)
+  mask(pr,mappingzone) 
+})
+temp<-stack(temp)
+plot(temp,zlim=range(values(temp),na.rm=TRUE))
 
 #### Map predictions with posteriors samples #############################
 
