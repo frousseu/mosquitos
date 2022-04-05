@@ -4,7 +4,7 @@ library(INLA)
 library(splines)
 
 
-load("SMG_model_selection.RData")
+load("VEX_model_selection.RData")
 
 # select the best model from the list
 model<-spmodels[[which.min(dics)]]

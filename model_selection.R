@@ -3,18 +3,24 @@
 library(INLA)
 library(splines)
 
-load("SMG_model_parameters.RData")
+load("VEX_model_parameters.RData")
 
 # Only the stack for estimation is used here
 # This file is mean to be ran on a server so necessary packages need to be called
 
-spmodels<-models[[gsub("_","",spcode)]]
+spmodels<-models[[gsub("_","",spcode)]]#[3:4]
 dics<-numeric(length(spmodels))
 
 inla.setOption(inla.mode="experimental")
 
+#vals<-list(intercept=1/30^2,default=1/30^2) #5-30
+#smooth<-setNames(as.list(rep(1/0.05^2,length(knots)+1)),1:(length(knots)+1))
+#vals<-c(vals,smooth)
+#control.fixed<-list(prec=vals,mean=list(intercept=0,default=0),expand.factor.strategy = "inla")
+
 for(i in seq_along(dics)){
 
+print(spmodels[[i]])  
 #### Model ##################################################
 m <- inla(spmodels[[i]],data=inla.stack.data(stackest), 
           control.predictor=list(compute=FALSE, A=inla.stack.A(stackest),link=1), 
@@ -28,6 +34,7 @@ m <- inla(spmodels[[i]],data=inla.stack.data(stackest),
           family="nbinomial")#"zeroinflatednbinomial1"
 
 dics[i]<-m$dic$dic
+summary(m)
 print(paste(Sys.time(),"-",round(dics[i],1),"-",i,"/",length(dics)))
 
 }
