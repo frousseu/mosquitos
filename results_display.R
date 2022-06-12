@@ -19,7 +19,7 @@ Sys.setlocale("LC_ALL","English")
 
 ## RESULTS ##################################################
 
-load("SMG_model_outputs.RData")
+load("VEX_model_outputs.RData")
 
 ls()[sapply(ls(),function(i){
   obj<-paste0("\\b",i,"\\b")
@@ -316,7 +316,7 @@ file.show(file.path("C:/Users/God/Downloads",paste0(spcode,"marginal_effects.png
 
 # this section is not that useful because it is a prediction for a given location, hence it includes uncertainty in the spatial field
 
-png(file.path("C:/Users/God/Downloads",paste0(spcode,"marginal_effects_spatial2.png")),width=12,height=8,units="in",res=300,pointsize=11)
+png(file.path("C:/Users/God/Downloads",paste0(spcode,"marginal_effects_spatial.png")),width=12,height=8,units="in",res=300,pointsize=11)
 
 par(mfrow=n2mfrow(length(v1m),asp=1.5),mar=c(3,2.5,1,1),oma=c(0,10,0,0))
 for(k in seq_along(v1m)){
@@ -628,8 +628,8 @@ lapply(seq_along(lpr),function(i){
 })
 dev.off()
 animation <- image_animate(img, fps = 2, optimize = TRUE)
-image_write(animation,file.path("C:/Users/God/Downloads",paste0(paste0(spcode,yearpred),"predicted_abundance2.gif")))
-file.show(file.path("C:/Users/God/Downloads",paste0(paste0(spcode,yearpred),"predicted_abundance2.gif")))
+image_write(animation,file.path("C:/Users/God/Downloads",paste0(paste0(spcode,yearpred),"predicted_abundance.gif")))
+file.show(file.path("C:/Users/God/Downloads",paste0(paste0(spcode,yearpred),"predicted_abundance.gif")))
 
 
 
