@@ -42,8 +42,8 @@ mfixed <- inla(fixed,data=cbind(y=xs$sp,xs@data),
 
 lccs<-paste(unique(gsub("1000","",names(xs)[grep("1000",names(xs))])),collapse="|")
 vss<-names(xs)[grep(paste0(lccs,"|anom|tmean|prcp"),names(xs))]
-#vss<-names(xs)[grep("yyy",names(xs))]
 vss<-vss[!grepl("CQ",vss)]
+vss<-vss[grep("anom|prcp|forest|agriculture|urban",vss)] # keep what is potentially in the model only and not other classes or tmean
 
 fixedfull<-formula(paste0("y ~ -1 + ns(jul, knots = knots) + ",paste(vss,collapse="+")))
 
