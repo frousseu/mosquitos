@@ -9,6 +9,7 @@ library(png)
 library(grid)
 library(magick)
 library(pracma)
+library(rnaturalearth)
 
 options(device = "X11")
 grDevices::windows.options(record=TRUE)
@@ -58,6 +59,19 @@ getlabels<-function(x){
 
 frange<-function(x,n=10){seq(min(x,na.rm=TRUE),max(x,na.rm=TRUE),length.out=n)}
 
+# add a scale on map
+lscale<-function(w=10000,lab="20 km",x=0.5,y=0.05,height=0.02,cex=0.55){
+  wi<-diff(par("usr")[c(1,2)])
+  he<-diff(par("usr")[c(3,4)])
+  xleft<-par("usr")[1]+wi*x
+  xright<-xleft+w
+  ybottom<-par("usr")[3]+he*y
+  ytop<-ybottom+he*height
+  print(c(xleft,ybottom,xright,ytop))
+  rect(xleft,ybottom,xright,ytop,col="white",border="black")
+  rect(xright,ybottom,xright+w,ytop,col="black",border="black")
+  text(xright+w,ybottom+(ytop-ybottom)/2,labels=lab,adj=c(-0.2,0.5),cex=cex,font=2)
+}
 
 # this determines the order of variables presented
 ov<-c("jul","anom2","anom7","anom30","anom90","prcp2","prcp7","prcp30","prcp90","agriculture50","agriculture1000","forest50","forest1000","urban50","urban1000","spatial")
@@ -87,7 +101,14 @@ resdics %>%
   kable_classic(full_width = FALSE, html_font = "Helvetica") %>% 
   row_spec(0, bold = T, background = "#EEEEEE",align="c") %>% 
   #kable_styling(full_width = FALSE, font_size = 12) %>% 
-  save_kable(file = file.path("C:/Users/God/Downloads",paste0(spcode,"dics.png")),density=500,zoom=2)
+  #save_kable(file = file.path("C:/Users/God/Downloads",paste0(spcode,"dics.png")),density=500,zoom=2) # save directly to png does not seem to work anymore 2022-06-12
+#file.show(file.path("C:/Users/God/Downloads",paste0(spcode,"dics2.png")))
+save_kable(file = file.path("C:/Users/God/Downloads",paste0(spcode,"dics.html")),density=500,zoom=2)
+
+webshot(file.path("C:/Users/God/Downloads",paste0(spcode,"dics.html")),"C:/Users/God/Downloads/temp.png",zoom=5)
+img<-image_read("C:/Users/God/Downloads/temp.png")
+img<-image_trim(img)
+image_write(img,file.path("C:/Users/God/Downloads",paste0(spcode,"dics.png")))
 file.show(file.path("C:/Users/God/Downloads",paste0(spcode,"dics.png")))
 
 #resdics %>%
@@ -139,9 +160,9 @@ topoly<-function(x,y,...){
 posneg<-function(x){
   neg<-trapz(x[x[,1]<0,1],x[x[,1]<0,2])  
   pos<-trapz(x[x[,1]>0,1],x[x[,1]>0,2]) 
-  if(neg>0.975){return(adjustcolor("steelblue",0.5))}
-  if(pos>0.975){return(adjustcolor("firebrick4",0.5))}
-  adjustcolor("ivory3",0.8)
+  if(neg>0.975){return(adjustcolor("steelblue",0.7))}
+  if(pos>0.975){return(adjustcolor("firebrick4",0.7))}
+  adjustcolor("ivory3",0.9)
 }
 
 png(file.path("C:/Users/God/Downloads",paste0(spcode,"posteriors.png")),width=4,height=6,units="in",res=300,pointsize=11)
@@ -149,7 +170,7 @@ xlim<-range(do.call("rbind",posteriors)[,1])
 #xlimh<-NULL
 xlim<-c(-1.0,0.8)
 ylim<-c(0,range(do.call("rbind",posteriors)[,2])[2])
-par(mfrow=c(length(posteriors),1),mar=c(0,0,0,0),oma=c(3,1,2,1))
+par(mfrow=c(length(posteriors),1),mar=c(0,0,0,0),oma=c(3.75,1,2,1))
 for (j in 1:length(posteriors)) {
   plot(posteriors[[j]][,1],posteriors[[j]][,2],type='n',xlab="",ylab='Density',xlim=xlim,ylim=ylim,yaxt="n",xaxt="n",bty="n",xpd=TRUE)#
   abline(h=seq(0,max(ylim),length.out=5),lty=3,col="grey80")
@@ -160,11 +181,11 @@ for (j in 1:length(posteriors)) {
   lapply(at,function(x){lines(c(x,x),ylim,lty=3,col="grey80")})
   lines(c(0,0),ylim,lty=1,lwd=1,col="grey70")
   if(j==length(posteriors)){
-    axis(1,at=at,labels=at,tcl=-0.2,mgp=c(1.5,0.25,0),cex.axis=1,font=2,col="grey70")
+    axis(1,at=at,labels=at,tcl=-0.3,mgp=c(3,0.75,0),cex.axis=2,font=2,col="grey70")
   }
-  text(par("usr")[1]+abs(diff(par("usr")[c(1,3)]))*0.0,par("usr")[2]+diff(par("usr")[c(2,4)])*0.90,names(posteriors)[j],cex=1.5,font=2,adj=c(0,1),col=gray(0,0.9))
+  text(par("usr")[1]+abs(diff(par("usr")[c(1,3)]))*0.0,par("usr")[2]+diff(par("usr")[c(2,4)])*0.95,names(posteriors)[j],cex=2,font=2,adj=c(0,1),col=gray(0,0.5))
   topoly(posteriors[[j]][,1],posteriors[[j]][,2],border=NA,col=posneg(posteriors[[j]]))#
-  mtext(outer=TRUE,side=1,line=2,text="Coefficient",font=2)
+  mtext(outer=TRUE,side=1,line=2.5,text="Coefficient",font=2,cex=1.25)
   mtext(outer=TRUE,side=3,line=0.25,text=substr(spcode,1,3),font=2,cex=1.5,adj=0.01)
 }
 dev.off()
@@ -295,7 +316,7 @@ file.show(file.path("C:/Users/God/Downloads",paste0(spcode,"marginal_effects.png
 
 # this section is not that useful because it is a prediction for a given location, hence it includes uncertainty in the spatial field
 
-png(file.path("C:/Users/God/Downloads",paste0(spcode,"marginal_effects_spatial.png")),width=12,height=8,units="in",res=300,pointsize=11)
+png(file.path("C:/Users/God/Downloads",paste0(spcode,"marginal_effects_spatial2.png")),width=12,height=8,units="in",res=300,pointsize=11)
 
 par(mfrow=n2mfrow(length(v1m),asp=1.5),mar=c(3,2.5,1,1),oma=c(0,10,0,0))
 for(k in seq_along(v1m)){
@@ -352,7 +373,7 @@ meansd<-stack(field)
 meansd<-resample(meansd,pred[[1]])
 names(meansd)<-c("mean.spatial.field","sd.spatial.field")
 pred<-stack(pred,meansd)
-#pred<-disaggregate(pred,fact=5,method="bilinear") # hack to make the map smoother
+pred<-disaggregate(pred,fact=5,method="bilinear") # hack to make the map smoother
 
 ### use tighter mapping zone instead of mappingzone
 #xsbuff<-st_coordinates(st_cast(st_buffer(st_as_sf(xs),7),"MULTIPOINT"))[,1:2]
@@ -448,6 +469,10 @@ lapply(names(pred),function(i){
   posy<-rep(diff(par("usr")[c(3,4)])*0.075+par("usr")[3],length(vpch))
   points(posx,posy,cex=vcex,pch=vpch,col=gray(0.2,1))
   text(posx,posy,label=vleg,adj=c(0.5,4),cex=1.2,xpd=TRUE)
+  if(i=="X0.975quant"){
+    lscale(w=5,lab="10 km",x=0.845,y=0.18,cex=1,height=0.02)
+    north()
+  }
 })
 
 dev.off()
@@ -504,7 +529,7 @@ lpr<-foreach(j=seq_along(days),.packages=c("raster")) %do% {
   pr<-rasterize(xsmap,pgrid,field="preds",fun=mean)
   pr<-mask(pr,mappingzone)
   pr<-exp(pr)
-  #pr<-disaggregate(pr,fact=1,method="bilinear")
+  pr<-disaggregate(pr,fact=5,method="bilinear") # hack to smooth map
   #print(j)
   cat("\r",j,"/",length(days))
   pr
@@ -549,11 +574,14 @@ lapply(seq_along(lpr),function(i){
   #plot(log(lpr[[i]]),zlim=log(zlim),col=cols,asp=1,legend.only=TRUE)
   mtext(side=3,line=-1.6,text=paste(gsub("_","",spcode),yearpred,"  observations:",paste(format(as.Date(range(rd)),"%b-%d"),collapse=" to "),sep="  "),adj=0.025,cex=1.5)
   mtext(side=4,line=-1,text="Number of mosquitos per trap (observed and predicted)",adj=0.5)
-  xp<-xmin(lpr[[1]])+((xmax(lpr[[1]])-xmin(lpr[[1]]))*c(0.05,0.13))
+  xp<-xmin(lpr[[1]])+((xmax(lpr[[1]])-xmin(lpr[[1]]))*c(0.08,0.18))
   yp<-rep(ymin(lpr[[1]])+((ymax(lpr[[1]])-ymin(lpr[[1]]))*0.90),2)  
   points(xp,yp,pch=21,cex=2,bg=colobs[c(which.min(xxs$sp),which.max(xxs$sp))],col="grey10",lwd=0.4)
-  text(xp,yp,label=xxs$sp[c(which.min(xxs$sp),which.max(xxs$sp))],cex=0.7,col="grey10",adj=c(0.5,-1))
-  text(xp,yp,label=c("min obs.","max obs."),cex=1,col="grey10",adj=c(1.2,0.5))
+  text(xp,yp,label=xxs$sp[c(which.min(xxs$sp),which.max(xxs$sp))],cex=0.9,col="grey10",adj=c(0.5,-1))
+  text(xp,yp,label=c("min obs.","max obs."),cex=1.35,col="grey10",adj=c(1.2,0.5))
+  lscale(w=5,lab="10 km",x=0.845,y=0.05,cex=1,height=0.02)
+  north()
+
   rec<-function(ybottom=-1000,xpd=TRUE){
     rect(xleft=range(as.Date(rd))[1],ybottom=ybottom,xright=range(as.Date(rd))[2],ytop=3000000,border=NA,col=adjustcolor("darkgreen",0.2),xpd=xpd)
   }
@@ -965,7 +993,6 @@ plot(ff(mfixed$summary.fitted.values[,quant]),ff(xs$sp),asp=1)
 par(mfrow=c(1,1))
 cor(ff(m$summary.fitted.values[index[["est"]],quant]),ff(xs$sp))^2
 cor(ff(mfixed$summary.fitted.values[,quant]),ff(xs$sp))^2
-
 cor(ff(mfixedfull$summary.fitted.values[,quant]),ff(xs$sp))^2
 
 
@@ -1012,7 +1039,7 @@ lapply(lr2,function(i){
 })
 par(new=TRUE,mfrow=c(1,1),mar=c(2,1,0,0),oma=c(0,3,1,1))
 plot(1,1,type="n",axes=FALSE)
-legend("topright",col=cols,pch=15,pt.cex=2,legend=c("Spatial + explanatory variables","Explanatory variables only","All explanatory variables"),title="Model",bty="o",cex=1,inse=c(0.05,0.1),box.lwd=0,box.col=gray(1,0.2))
+legend("topright",col=cols,pch=15,pt.cex=2,legend=c("Best model (best explanatory variables + spatial)","Best model without spatial","All explanatory variables without spatial"),title="Model",bty="o",cex=1,inset=c(0.00,0.07),box.lwd=0,box.col=gray(1,0.2))
 dev.off()
 file.show("C:/Users/God/Downloads/mosquito_r2.png")
 
@@ -1024,7 +1051,7 @@ lm<-list.files(pattern="_model_outputs.RData")
 sps<-c("CPR_","CQP_","SMG_","VEX_")
 
 png("C:/Users/God/Downloads/mosquito_counts.png",width=10,height=8,units="in",res=200,pointsize=11)
-par(mfrow=c(2,2),mar=c(4,1,0,0),oma=c(2.25,2.75,0,0))
+par(mfrow=c(2,2),mar=c(6,1,0,0),oma=c(3,2.75,0,0))
 lapply(sps,function(i){
   counts<-xs@data[,grep(i,names(xs))]
   print(rev(sort(table(counts)))[1:5])
@@ -1038,12 +1065,12 @@ lapply(sps,function(i){
   at<-b[,1]
   lab<-paste0(round(exp(head(h$breaks,-1))-1+1,0)," - ",round(exp(tail(h$breaks,-1))-1,0))
   lab[1:2]<-c("0","1 - 5")
-  axis(1,at=at,labels=lab,mgp=c(2,0.5,0),tcl=-0.2,cex.axis=0.75,font=2,las=2)
-  axis(2,at=pretty(1.3*(h$counts/1000),7),las=2,mgp=c(2,0.5,0),tcl=-0.2,cex.axis=0.75,font=2)
-  mtext(side=3,line=-4,text=gsub("_","",i),font=2,cex=2,adj=0.9)
-  mtext(side=3,line=-6,text=paste(sum(counts),"ind."),font=2,cex=1.5,adj=0.9)
+  axis(1,at=at,labels=lab,mgp=c(2,0.5,0),tcl=-0.2,cex.axis=1.25,font=2,las=2)
+  axis(2,at=pretty(1.3*(h$counts/1000),7),las=2,mgp=c(2,0.5,0),tcl=-0.2,cex.axis=1.25,font=2)
+  mtext(side=3,line=-7,text=gsub("_","",i),font=2,cex=2,adj=0.9)
+  mtext(side=3,line=-9,text=paste(sum(counts),"ind."),font=2,cex=1.5,adj=0.9)
   mtext(side=2,line=1,outer=TRUE,text="Frequency (x 1000)",xpd=TRUE,font=2,cex=1.5)
-  mtext(side=1,line=1,outer=TRUE,text="Trap counts",xpd=TRUE,font=2,cex=1.5)
+  mtext(side=1,line=1.5,outer=TRUE,text="Trap counts",xpd=TRUE,font=2,cex=1.5)
 })
 dev.off()
 file.show("C:/Users/God/Downloads/mosquito_counts.png")
@@ -1131,8 +1158,8 @@ ims<-do.call("c",lapply(images,function(x){
   dev.off()
   im
 }))
-res1<-image_append(c(ims[1],ims[2]),stack=FALSE)
-res2<-image_append(c(ims[3],ims[4]),stack=FALSE)  
+res1<-image_append(c(ims[1],ims[2]),stack=TRUE)
+res2<-image_append(c(ims[3],ims[4]),stack=TRUE)  
 res<-image_append(c(res1,res2),stack=TRUE)
 image_write(res,"C:/Users/God/Downloads/mosquito_dic_tables.png")
 file.show("C:/Users/God/Downloads/mosquito_dic_tables.png")
@@ -1191,20 +1218,7 @@ image_write(im,"C:/Users/God/Downloads/reduced_mosquito_animations.gif")
 
 ### Study area map with lcc ################################################
 
-# add a scale on map
-lscale<-function(w=10000,lab="20 km"){
-  wi<-diff(par("usr")[c(1,2)])
-  he<-diff(par("usr")[c(3,4)])
-  xleft<-par("usr")[1]+wi*0.5
-  xright<-xleft+w
-  h<-1500   
-  ybottom<-par("usr")[3]+he*0.05
-  ytop<-ybottom+h
-  print(c(xleft,ybottom,xright,ytop))
-  rect(xleft,ybottom,xright,ytop,col="white",border="black")
-  rect(xright,ybottom,xright+w,ytop,col="black",border="black")
-  text(xright+w,ybottom+(ytop-ybottom)/2,labels=lab,adj=c(-0.2,0.5),cex=0.55,font=2)
-}
+lakes10 <- ne_download(scale = 10, type = 'lakes', category = 'physical')
 
 l<-list.files(file.path(path,"LULC/LULC/"),pattern=".tif",full.names=TRUE)
 l<-l[substr(l,nchar(l)-3,nchar(l))==".tif"]
@@ -1215,6 +1229,7 @@ water<-crop(water,st_transform(st_as_sf(mappingzone),crs=crs(water)))
 water[water!=20]<-NA
 water<-ms_simplify(st_union(st_transform(st_as_sf(as.polygons(water)),crs=crs(ds))),0.05)
 z<-lulc[["LULC2011"]]
+z<-crop(z,st_transform(st_as_sf(mappingzone),crs(z)))
 z<-mask(z,st_transform(st_as_sf(mappingzone),crs(z)))
 
 
@@ -1229,11 +1244,11 @@ ne<-ms_simplify(ne,keep=0.02)
 
 png("C:/Users/God/Downloads/location_map.png",width=8,height=8,units="in",res=200,pointsize=11)
 lim<-c(-85,40,-55,55)
-plot(st_geometry(ne),border=NA,col="grey90",axes=TRUE,bg="lightblue",xlim=lim[c(1,3)],ylim=lim[c(2,4)])
-plot(lakes110,col="lightskyblue",border=NA,add=TRUE)
+plot(st_geometry(ne),border=NA,col="grey90",axes=TRUE,bg="lightblue",xlim=lim[c(1,3)],ylim=lim[c(2,4)],cex.axis=2)
+plot(lakes10,col="lightskyblue",border=NA,add=TRUE)
 plot(st_geometry(ne),border=gray(0,0.1),col=NA,add=TRUE,lwd=0.1)
 plot(st_geometry(st_transform(st_as_sf(mappingzone),st_crs(ne))),col=gray(0,0.15),border="red",lwd=0.5,add=TRUE)
-mtext(side=3,line=0.25,text="Location of study area",font=2,cex=2,adj=0.025)
+mtext(side=3,line=0.25,text="Location of study area",font=2,cex=3,adj=0.025)
 box(col="grey60")
 dev.off()
 file.show("C:/Users/God/Downloads/location_map.png")
@@ -1244,10 +1259,14 @@ lccnames$cols<-adjustcolor(cols[match(lccnames$used,names(cols))],0.8)
 on<-c("agriculture","forest","shrub","urban","water","wetland","other")
 lccnames<-lccnames[order(lccnames$classn),]
 
+
 png("C:/Users/God/Downloads/lcc_map.png",width=7,height=4,units="in",res=300,pointsize=11)
 par(mar=c(0,0,0,8))
-plot(z,col=lccnames$cols,breaks=c(0,lccnames$classn),axis.args=arg,xlim=xlim,ylim=ylim,zlim=c(0,220),legend=FALSE,legend.width=1,legend.shrink=1.25,axes=TRUE,bty="n")
-locs<-ds[!ds$id%in%c("map1","map2") & !duplicated(ds@data[,c("longitude","latitude")]),]
+xlim<-bbox(mappingzone)[1,]*1000
+ylim<-bbox(mappingzone)[2,]*1000
+#arg <- list(at=rat$ID, labels=rat$class)
+plot(z,col=lccnames$cols,breaks=c(0,lccnames$classn),axis.args=NULL,xlim=xlim,ylim=ylim,zlim=c(0,220),legend=FALSE,legend.width=1,legend.shrink=1.25,axes=TRUE,bty="n")
+locs<-ds[!ds$db%in%c("map1","map2") & !duplicated(ds@data[,c("longitude","latitude")]),]
 plot(st_geometry(st_transform(st_as_sf(locs),proj4string(lulc))),cex=1,pch=16,col=adjustcolor("firebrick",0.6),add=TRUE)
 name<-unique(lccnames$used)
 o<-order(match(name,on))
@@ -1256,6 +1275,7 @@ legend("topright",legend=" Trap location",pch=16,col=adjustcolor("firebrick",0.6
 lscale()
 box(col="white")
 mtext(side=3,line=-1.75,text="Study area and land cover classes",adj=0.05,font=2,cex=1.25)
+north()
 dev.off()
 file.show("C:/Users/God/Downloads/lcc_map.png")
 
@@ -1272,17 +1292,25 @@ file.show("C:/Users/God/Downloads/location.png")
 ### Show traps in mapping zone #######################
 
 l<-split(ds[!ds$db%in%c("map1","map2"),],ds$year[!ds$db%in%c("map1","map2")])
+l[[length(l)+1]]<-l[[length(l)]]
+len<-length(l)
 
-png("C:/Users/God/Downloads/trap_year.png",width=6,height=4,units="in",res=200,pointsize=11)
-par(mfrow=n2mfrow(length(l)),mar=c(0,0,0,0),oma=c(0,0,0,0))
-lapply(l,function(i){
-  x<-i[!duplicated(i$longitude),]
-  plot(mappingzone,col="grey90",border=NA)
-  plot(water,col="lightblue",border=NA,add=TRUE)
-  bb<-st_as_sfc(st_bbox(mappingzone))
-  plot(st_difference(bb,st_as_sf(mappingzone)),col="white",border=NA,add=TRUE)
-  plot(x,pch=16,cex=0.6,col=adjustcolor("firebrick",0.8),add=TRUE)
-  mtext(i$year[1],side=3,adj=c(0.1),line=-1.5,cex=0.5,font=2)
+png("C:/Users/God/Downloads/trap_year.png",width=7,height=3,units="in",res=300,pointsize=11)
+par(mfrow=n2mfrow(length(l),asp=2),mar=c(0,0,0,0),oma=c(0,0,0,0))
+lapply(seq_along(l),function(i){
+  x<-l[[i]][!duplicated(l[[i]]$longitude),]
+  if(i==length(l)){
+    plot(mappingzone,col="white",border=NA,type="n")
+    lscale(w=10,lab="20 km",x=0.4,y=0.25,cex=0.5,height=0.025)
+    north(xy=coordinates(mappingzone)[1,],d=10,cex=0.5)
+  }else{
+    plot(mappingzone,col="grey90",border=NA)
+    plot(water,col="lightblue",border=NA,add=TRUE)
+    bb<-st_as_sfc(st_bbox(mappingzone))
+    plot(st_difference(bb,st_as_sf(mappingzone)),col="white",border=NA,add=TRUE)
+    plot(x,pch=16,cex=0.6,col=adjustcolor("firebrick",0.8),add=TRUE)
+    mtext(l[[i]]$year[1],side=3,adj=c(0.1),line=-1.5,cex=0.5,font=2)
+  }
 })
 dev.off()
 file.show("C:/Users/God/Downloads/trap_year.png")
@@ -1302,11 +1330,11 @@ png("C:/Users/God/Downloads/trap_weeks.png",width=5,height=7,units="in",res=200,
 par(mfrow=c(length(nbtraps),1),mar=c(0.5,3,0,0),oma=c(3,0,0,0))
 lapply(nbtraps,function(i){
   b<-barplot(i$nbtraps,names.arg=if(identical(i,nbtraps[[length(nbtraps)]])){i$week}else{NULL},ylim=c(0,max(ee$nbtraps)),border=NA,col="forestgreen",xpd=FALSE,yaxt="n")
-  text(b[,1],rep(-15,nrow(i)),i$nbtraps,cex=0.75,xpd=TRUE)
-  mtext(side=3,line=-1.5,text=i$year[1],adj=0.005)
+  #text(b[,1],rep(-15,nrow(i)),i$nbtraps,cex=0.75,xpd=TRUE)
+  grid()
+  mtext(side=3,line=-1.5,text=i$year[1],adj=0.025)
   rect(par("usr")[1],par("usr")[3],par("usr")[2],par("usr")[4],col = gray(0,0.05),border=NA)
-  axis(2,las=TRUE)
-  #grid()
+  axis(2,mgp=c(2,0.5,0),tcl=-0.2,las=TRUE)
 })
 dev.off()
 file.show("C:/Users/God/Downloads/trap_weeks.png")
