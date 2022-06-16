@@ -19,7 +19,7 @@ Sys.setlocale("LC_ALL","English")
 
 ## RESULTS ##################################################
 
-load("VEX_model_outputs.RData")
+load("SMG_model_outputs.RData")
 
 ls()[sapply(ls(),function(i){
   obj<-paste0("\\b",i,"\\b")
@@ -249,7 +249,7 @@ v1m<-v1m[order(match(v1m,ov))]
 
 png(file.path("C:/Users/God/Downloads",paste0(spcode,"marginal_effects.png")),width=10,height=8,units="in",res=300,pointsize=11)
 
-par(mfrow=n2mfrow(length(v1m),asp=3.45/2),mar=c(3,2.5,1,1),oma=c(4,4,0,0))
+par(mfrow=n2mfrow(length(v1m),asp=3.45/2),mar=c(2.5,0,0.5,0),oma=c(4,5,0,0.5))
 for(k in seq_along(v1m)){
   p<-lapply(1:nsims,function(i){
     betas<-samples[[i]]$latent[nparams]
@@ -283,14 +283,14 @@ for(k in seq_along(v1m)){
       #lines(vals,p2[,2]+1,lwd=1,col="red")
       lines(vals,p1[,2]+1,lwd=1,col="darkgreen")
       at<-c(1,6,11,51,101,501,1001,5001,10001,max(xs$sp)+1)
-      axis(2,at=at,label=at-1,mgp=c(2,0.45,0),tcl=-0.2,las=2,font=2,cex.axis=1,gap.axis=0)
+      axis(2,at=at,label=if(k%in%c(1,4,7)){at-1}else{rep("",length(at))},mgp=c(2,0.45,0),tcl=-0.2,las=2,font=2,cex.axis=1,gap.axis=0)
       if(v1m[k]=="jul"){
         labd<-paste0("2021-",c("05-01","06-01","07-01","08-01","09-01","10-01","11-01"))
         at<-as.integer(format(as.Date(labd),"%j"))
         lab<-format(as.Date(labd),"%b-%d")
-        axis(1,at=at,labels=lab,mgp=c(1.5,0.45,0),font=2,tcl=-0.2)
+        axis(1,at=at,labels=lab,mgp=c(1.5,0.45,0),font=2,tcl=-0.2,xpd=TRUE)
       }else{
-        axis(1,mgp=c(1.5,0.45,0),font=2,tcl=-0.2)
+        axis(1,mgp=c(1.5,0.45,0),font=2,tcl=-0.2,xpd=TRUE)
       }
     }else{
       plot(vals,p1[,2],type="l",ylim=c(0,min(c(max(p1[,3]),max(xs$sp))))*1.3,xlab=v1m[k],font=2,ylab="",lty=1,yaxt="n",mgp=c(1.5,0.45,0),tcl=-0.3)
@@ -306,8 +306,8 @@ for(k in seq_along(v1m)){
   }
   
 }
-mtext(paste("No. of mosquitos per trap"),outer=TRUE,cex=1.2,side=2,xpd=TRUE,line=1)
-mtext(paste("Explanatory variables"),outer=TRUE,cex=1.2,side=1,xpd=TRUE,line=1)
+mtext(paste("No. of mosquitos per trap"),outer=TRUE,cex=1.2,side=2,xpd=TRUE,line=3)
+mtext(paste("Explanatory variables"),outer=TRUE,cex=1.2,side=1,xpd=TRUE,line=1.5)
 
 dev.off()
 file.show(file.path("C:/Users/God/Downloads",paste0(spcode,"marginal_effects.png")))
@@ -469,7 +469,7 @@ lapply(names(pred),function(i){
   posy<-rep(diff(par("usr")[c(3,4)])*0.075+par("usr")[3],length(vpch))
   points(posx,posy,cex=vcex,pch=vpch,col=gray(0.2,1))
   text(posx,posy,label=vleg,adj=c(0.5,4),cex=1.2,xpd=TRUE)
-  if(i=="X0.975quant"){
+  if(i=="sd.spatial.field"){
     lscale(w=5,lab="10 km",x=0.845,y=0.18,cex=1,height=0.02)
     north()
   }
@@ -1023,7 +1023,8 @@ r2$cols<-colsa[match(r2$model,names(colsa))]
 
 lr2<-split(r2,r2$sp)
 
-png("C:/Users/God/Downloads/mosquito_r2.png",width=8,height=4,units="in",res=200,pointsize=11)
+png("C:/Users/God/Downloads/mosquito_r2.png",width=9,height=4,units="in",res=200,pointsize=11)
+#png("C:/Users/God/Downloads/mosquito_r2.png",width=900,height=320,units="px",res=200,pointsize=11)
 par(mfrow=c(1,4),mar=c(2,1,0,0),oma=c(0,3,1,1))
 ylim<-c(0,max(r2$r2))
 lapply(lr2,function(i){
