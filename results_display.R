@@ -1016,7 +1016,7 @@ rc2<-lapply(seq_along(lm),function(ii){
 })
 
 r2<-data.frame(sp=rep(substr(lm,1,3),each=length(rc2[[1]])),model=names(unlist(rc2)),r2=unlist(rc2))
-r2<-r2[substr(r2$model,nchar(r2$model),nchar(r2$model))=="m",]
+r2<-r2[substr(r2$model,nchar(r2$model),nchar(r2$model))!="m",]
 cols<-adjustcolor(c("forestgreen","firebrick","dodgerblue"),0.5)
 colsa<-c(mspatial=cols[1],mspatialm=cols[1],mfixed=cols[2],mfixedm=cols[2],mfixedfull=cols[3],mfixedfullm=cols[3])
 r2$cols<-colsa[match(r2$model,names(colsa))]
