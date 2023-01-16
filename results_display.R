@@ -17,6 +17,8 @@ Sys.setlocale("LC_ALL","English")
 # first set working directory
 # all files should be in this folder
 
+pathfig<-"C:/Users/God/Documents/mosquitos/review/figures"
+
 ## RESULTS ##################################################
 
 load("SMG_model_outputs.RData")
@@ -101,15 +103,15 @@ resdics %>%
   kable_classic(full_width = FALSE, html_font = "Helvetica") %>% 
   row_spec(0, bold = T, background = "#EEEEEE",align="c") %>% 
   #kable_styling(full_width = FALSE, font_size = 12) %>% 
-  #save_kable(file = file.path("C:/Users/God/Downloads",paste0(spcode,"dics.png")),density=500,zoom=2) # save directly to png does not seem to work anymore 2022-06-12
-#file.show(file.path("C:/Users/God/Downloads",paste0(spcode,"dics2.png")))
-save_kable(file = file.path("C:/Users/God/Downloads",paste0(spcode,"dics.html")),density=500,zoom=2)
+  #save_kable(file = file.path(pathfig,paste0(spcode,"dics.png")),density=500,zoom=2) # save directly to png does not seem to work anymore 2022-06-12
+#file.show(file.path(pathfig,paste0(spcode,"dics2.png")))
+save_kable(file = file.path(pathfig,paste0(spcode,"dics.html")),density=500,zoom=2)
 
-webshot(file.path("C:/Users/God/Downloads",paste0(spcode,"dics.html")),"C:/Users/God/Downloads/temp.png",zoom=5)
-img<-image_read("C:/Users/God/Downloads/temp.png")
+webshot(file.path(pathfig,paste0(spcode,"dics.html")),file.path(pathfig,"temp.png"),zoom=5)
+img<-image_read(file.path(pathfig,"temp.png"))
 img<-image_trim(img)
-image_write(img,file.path("C:/Users/God/Downloads",paste0(spcode,"dics.png")))
-file.show(file.path("C:/Users/God/Downloads",paste0(spcode,"dics.png")))
+image_write(img,file.path(pathfig,paste0(spcode,"dics.png")))
+file.show(file.path(pathfig,paste0(spcode,"dics.png")))
 
 #resdics %>%
 #  kbl(row.names = FALSE) %>%
@@ -118,8 +120,8 @@ file.show(file.path("C:/Users/God/Downloads",paste0(spcode,"dics.png")))
 #  row_spec(0, bold = T, background = "#EEEEEE",align="c") %>% 
 #  #kable_styling(full_width = FALSE, font_size = 12) %>% 
 #  #as_image()
-#  save_kable(file = file.path("C:/Users/God/Downloads",paste0(spcode,"dics.png")),density=500)
-#file.show(file.path("C:/Users/God/Downloads",paste0(spcode,"dics.png")))
+#  save_kable(file = file.path(pathfig,paste0(spcode,"dics.png")),density=500)
+#file.show(file.path(pathfig,paste0(spcode,"dics.png")))
 
 
 #### Show posteriors ########################################
@@ -165,7 +167,7 @@ posneg<-function(x){
   adjustcolor("ivory3",0.9)
 }
 
-png(file.path("C:/Users/God/Downloads",paste0(spcode,"posteriors.png")),width=4,height=6,units="in",res=300,pointsize=11)
+png(file.path(pathfig,paste0(spcode,"posteriors.png")),width=4,height=6,units="in",res=300,pointsize=11)
 xlim<-range(do.call("rbind",posteriors)[,1])
 #xlimh<-NULL
 xlim<-c(-1.0,0.8)
@@ -189,7 +191,7 @@ for (j in 1:length(posteriors)) {
   mtext(outer=TRUE,side=3,line=0.25,text=substr(spcode,1,3),font=2,cex=1.5,adj=0.01)
 }
 dev.off()
-file.show(file.path("C:/Users/God/Downloads",paste0(spcode,"posteriors.png")))
+file.show(file.path(pathfig,paste0(spcode,"posteriors.png")))
 
 
 #### Spatial fields #########################################
@@ -224,10 +226,10 @@ r<-mask(r,mappingzone)
 #### Plot fields 
 cols<-colo.scale(seq(range(values(r),na.rm=TRUE)[1],range(values(r),na.rm=TRUE)[2],length.out=200),c("darkblue","dodgerblue","ivory2","tomato2","firebrick4"),center=TRUE)#,"grey20"))
 p.strip<-list(cex=0.65,lines=1,col="black")
-levelplot(r,col.regions=cols,cuts=199,margin=FALSE,par.strip.text=p.strip,par.settings = list(axis.line = list(col = "grey90"),strip.background = list(col = 'transparent'),strip.border = list(col = 'grey90')),scales = list(col = "black")) +
-  layer(sp.points(xs,col="black",pch=1,cex=scales:::rescale(c(max(xs$sp),identity(xs$sp)),to=c(0.5,15))[-1]))+
-  layer(sp.points(xs,col="black",pch=3,cex=0.5))+
-  layer(sp.polygons(as(water,"Spatial"),col=gray(0,0.2)))
+#levelplot(r,col.regions=cols,cuts=199,margin=FALSE,par.strip.text=p.strip,par.settings = list(axis.line = list(col = "grey90"),strip.background = list(col = 'transparent'),strip.border = list(col = 'grey90')),scales = list(col = "black")) +
+#  layer(sp.points(xs,col="black",pch=1,cex=scales:::rescale(c(max(xs$sp),identity(xs$sp)),to=c(0.5,15))[-1]))+
+#layer(sp.points(xs,col="black",pch=3,cex=0.5))+
+#  layer(sp.polygons(as(water,"Spatial"),col=gray(0,0.2)))
 par(mfrow=c(1,1))
 
 
@@ -247,7 +249,7 @@ nweights<-grep("spatial",row.names(samples[[1]]$latent))
 v1m<-c("jul",v1[v1%in%row.names(m$summary.fixed)])
 v1m<-v1m[order(match(v1m,ov))]
 
-png(file.path("C:/Users/God/Downloads",paste0(spcode,"marginal_effects.png")),width=10,height=8,units="in",res=300,pointsize=11)
+png(file.path(pathfig,paste0(spcode,"marginal_effects.png")),width=10,height=8,units="in",res=300,pointsize=11)
 
 par(mfrow=n2mfrow(length(v1m),asp=3.45/2),mar=c(2.5,0,0.5,0),oma=c(4,5,0,0.5))
 for(k in seq_along(v1m)){
@@ -306,17 +308,17 @@ for(k in seq_along(v1m)){
   }
   
 }
-mtext(paste("No. of mosquitos per trap"),outer=TRUE,cex=1.2,side=2,xpd=TRUE,line=3)
+mtext(paste("No. of mosquitoes per trap"),outer=TRUE,cex=1.2,side=2,xpd=TRUE,line=3)
 mtext(paste("Explanatory variables"),outer=TRUE,cex=1.2,side=1,xpd=TRUE,line=1.5)
 
 dev.off()
-file.show(file.path("C:/Users/God/Downloads",paste0(spcode,"marginal_effects.png")))
+file.show(file.path(pathfig,paste0(spcode,"marginal_effects.png")))
 
 #### Marginal effects with spatial uncertainty ##########################
 
 # this section is not that useful because it is a prediction for a given location, hence it includes uncertainty in the spatial field
 
-png(file.path("C:/Users/God/Downloads",paste0(spcode,"marginal_effects_spatial.png")),width=12,height=8,units="in",res=300,pointsize=11)
+png(file.path(pathfig,paste0(spcode,"marginal_effects_spatial.png")),width=12,height=8,units="in",res=300,pointsize=11)
 
 par(mfrow=n2mfrow(length(v1m),asp=1.5),mar=c(3,2.5,1,1),oma=c(0,10,0,0))
 for(k in seq_along(v1m)){
@@ -347,16 +349,14 @@ for(k in seq_along(v1m)){
   }
   
 }
-mtext("No. of mosquitos per trap",outer=TRUE,cex=1.2,side=2,xpd=TRUE,line=2)
+mtext("No. of mosquitoes per trap",outer=TRUE,cex=1.2,side=2,xpd=TRUE,line=2)
 
 dev.off()
-file.show(file.path("C:/Users/God/Downloads",paste0(spcode,"marginal_effects_spatial.png")))
+file.show(file.path(pathfig,paste0(spcode,"marginal_effects_spatial.png")))
 
 #### Map predictions ####################################
 
 # The code for the graph below really sucks... should make it better...
-
-
 
 quantities<-c("mean","X0.025quant","X0.975quant","sd")
 xsmappred<-cbind(xsmap[,"id"],data.frame(m$summary.linear.predictor[index.map,gsub("X","",quantities)]))
@@ -391,13 +391,13 @@ colsfield<-colo.scale(seq(range(values(pred[["mean.spatial.field"]]),na.rm=TRUE)
 colssd<-colo.scale((seq(0.01,5,length.out=200))^3,colsfield)
 
 titles<-c("Mean","CI 2.5%","CI 97.5%","SD","Mean Spatial Field","SD Spatial Field")
-legtitles<-c("No. of Mosquitos / trap","No. of Mosquitos / trap","No. of Mosquitos / trap","No. of Mosquitos / trap (on the link scale)","No. of Mosquitos / trap (on the link scale)","No. of Mosquitos / trap (on the link scale)")
+legtitles<-c("Mean No. of Mosquitoes / trap","Mean No. of Mosquitoes / trap","Mean No. of Mosquitoes / trap","Mean No. of Mosquitoes / trap (on the link scale)","Mean of the Spatial Field","Standard Deviation of the Spatial Field")
 names(titles)<-names(pred)
 names(legtitles)<-names(pred)  
 
 
 
-png(file.path("C:/Users/God/Downloads",paste0(spcode,"maps_all.png")),width=16,height=8,units="in",res=300,pointsize=11)
+png(file.path(pathfig,paste0(spcode,"maps_all.png")),width=16,height=8,units="in",res=300,pointsize=11)
 
 par(mfrow=n2mfrow(nlayers(pred),asp=1.5),mar=c(1,0.5,1,7),oma=c(0,0,0,0),bty="n")
 lapply(names(pred),function(i){
@@ -476,7 +476,7 @@ lapply(names(pred),function(i){
 })
 
 dev.off()
-file.show(file.path("C:/Users/God/Downloads",paste0(spcode,"maps_all.png")))
+file.show(file.path(pathfig,paste0(spcode,"maps_all.png")))
 
 
 #### Map abundance across season #############################
@@ -628,8 +628,8 @@ lapply(seq_along(lpr),function(i){
 })
 dev.off()
 animation <- image_animate(img, fps = 2, optimize = TRUE)
-image_write(animation,file.path("C:/Users/God/Downloads",paste0(paste0(spcode,yearpred),"predicted_abundance.gif")))
-file.show(file.path("C:/Users/God/Downloads",paste0(paste0(spcode,yearpred),"predicted_abundance.gif")))
+image_write(animation,file.path(pathfig,paste0(paste0(spcode,yearpred),"predicted_abundance.gif")))
+file.show(file.path(pathfig,paste0(paste0(spcode,yearpred),"predicted_abundance.gif")))
 
 
 
@@ -836,7 +836,7 @@ dev.off()
 animation <- image_animate(img, fps = 1, optimize = TRUE)
 #print(animation)
 
-image_write(animation,file.path("C:/Users/God/Downloads",paste0(paste0(spcode,yearpred),".gif")))
+image_write(animation,file.path(pathfig,paste0(paste0(spcode,yearpred),".gif")))
 
 
 #### Custom map predictions with posterior samples ############################
@@ -891,7 +891,7 @@ lprr<-foreach(j=seq_along(days),.packages=c("raster")) %do% {
 lpr<-lapply(lprr,rast)
 
 
-png(file.path("C:/Users/God/Downloads",paste0(spcode,"color_obs.png")),width=13,height=8,units="in",res=300)
+png(file.path(pathfig,paste0(spcode,"color_obs.png")),width=13,height=8,units="in",res=300)
 par(mfrow=n2mfrow(length(days),asp=3.5/2),mar=c(0,0,3,0),oma=c(0,0,0,0))
 
 jul<-round(days*vscale[["jul"]]["sd"]+vscale[["jul"]]["mean"],0)
@@ -933,7 +933,7 @@ lapply(seq_along(lpr),function(i){
   
 })
 dev.off()
-file.show(file.path("C:/Users/God/Downloads",paste0(spcode,"color_obs.png")))
+file.show(file.path(pathfig,paste0(spcode,"color_obs.png")))
 
 #### Model checks ##############################################
 
@@ -1023,8 +1023,8 @@ r2$cols<-colsa[match(r2$model,names(colsa))]
 
 lr2<-split(r2,r2$sp)
 
-png("C:/Users/God/Downloads/mosquito_r2.png",width=9,height=4,units="in",res=200,pointsize=11)
-#png("C:/Users/God/Downloads/mosquito_r2.png",width=900,height=320,units="px",res=200,pointsize=11)
+png(file.path(pathfig,"mosquito_r2.png"),width=9,height=4,units="in",res=200,pointsize=11)
+#png(file.path(pathfig,"mosquito_r2.png"),width=900,height=320,units="px",res=200,pointsize=11)
 par(mfrow=c(1,4),mar=c(2,1,0,0),oma=c(0,3,1,1))
 ylim<-c(0,max(r2$r2))
 lapply(lr2,function(i){
@@ -1042,7 +1042,7 @@ par(new=TRUE,mfrow=c(1,1),mar=c(2,1,0,0),oma=c(0,3,1,1))
 plot(1,1,type="n",axes=FALSE)
 legend("topright",col=cols,pch=15,pt.cex=2,legend=c("Best model (best explanatory variables + spatial)","Best model without spatial","All explanatory variables without spatial"),title="Model",bty="o",cex=1,inset=c(0.00,0.07),box.lwd=0,box.col=gray(1,0.2))
 dev.off()
-file.show("C:/Users/God/Downloads/mosquito_r2.png")
+file.show(file.path(pathfig,"mosquito_r2.png"))
 
 
 ### Species total ######################################
@@ -1051,7 +1051,7 @@ lm<-list.files(pattern="_model_outputs.RData")
 
 sps<-c("CPR_","CQP_","SMG_","VEX_")
 
-png("C:/Users/God/Downloads/mosquito_counts.png",width=10,height=8,units="in",res=200,pointsize=11)
+png(file.path(pathfig,"mosquito_counts.png"),width=10,height=8,units="in",res=200,pointsize=11)
 par(mfrow=c(2,2),mar=c(6,1,0,0),oma=c(3,2.75,0,0))
 lapply(sps,function(i){
   counts<-xs@data[,grep(i,names(xs))]
@@ -1074,7 +1074,7 @@ lapply(sps,function(i){
   mtext(side=1,line=1.5,outer=TRUE,text="Trap counts",xpd=TRUE,font=2,cex=1.5)
 })
 dev.off()
-file.show("C:/Users/God/Downloads/mosquito_counts.png")
+file.show(file.path(pathfig,"mosquito_counts.png"))
 
 #### SPDE posteriors ##########################################
 
@@ -1089,7 +1089,7 @@ par(mfrow=c(1,1))
 
 ### Combine maps ##########################################
 
-images<-list.files("C:/Users/God/Downloads",pattern="*maps_all.png",full.names=TRUE)
+images<-list.files(pathfig,pattern="*maps_all.png",full.names=TRUE)
 ims<-do.call("c",lapply(images,function(x){
   im<-image_read(x)
   i<-image_info(im)
@@ -1116,17 +1116,17 @@ ims<-do.call("c",lapply(images,function(x){
   res
 }))
 im<-image_append(image_scale(ims, "6000"), stack = TRUE)
-image_write(im,"C:/Users/God/Downloads/mosquito_maps.png")
-file.show("C:/Users/God/Downloads/mosquito_maps.png")
-im<-image_read("C:/Users/God/Downloads/mosquito_maps.png")
+image_write(im,file.path(pathfig,"mosquito_maps.png"))
+file.show(file.path(pathfig,"mosquito_maps.png"))
+im<-image_read(file.path(pathfig,"mosquito_maps.png"))
 im<-image_scale(im[1],"x700")
-image_write(im,"C:/Users/God/Downloads/reduced_mosquito_maps.png")
-#file.show("C:/Users/God/Downloads/reduced_mosquito_maps.png")
+image_write(im,file.path(pathfig,"reduced_mosquito_maps.png"))
+#file.show(file.path(pathfig,"reduced_mosquito_maps.png"))
 
 
 ### Combine marginal effects ######################################
 
-images<-list.files("C:/Users/God/Downloads",pattern="*marginal_effects.png",full.names=TRUE)
+images<-list.files(pathfig,pattern="*marginal_effects.png",full.names=TRUE)
 ims<-do.call("c",lapply(images,function(x){
   im<-image_read(x)
   im<-image_border(im,"#FFFFFF","x100")
@@ -1139,17 +1139,17 @@ ims<-do.call("c",lapply(images,function(x){
 res1<-image_append(c(ims[1],ims[2]),stack=FALSE)
 res2<-image_append(c(ims[3],ims[4]),stack=FALSE)  
 res<-image_append(c(res1,res2),stack=TRUE)
-image_write(res,"C:/Users/God/Downloads/mosquito_effects.png")
-file.show("C:/Users/God/Downloads/mosquito_effects.png")
-im<-image_read("C:/Users/God/Downloads/mosquito_effects.png")
+image_write(res,file.path(pathfig,"mosquito_effects.png"))
+file.show(file.path(pathfig,"/mosquito_effects.png"))
+im<-image_read(file.path(pathfig,"mosquito_effects.png"))
 im<-image_scale(im[1],"x700")
-image_write(im,"C:/Users/God/Downloads/reduced_mosquito_effects.png")
-#file.show("C:/Users/God/Downloads/reduced_mosquito_effects.png")
+image_write(im,file.path(pathfig,"reduced_mosquito_effects.png"))
+#file.show(file.path(pathfig,"reduced_mosquito_effects.png"))
 
 
 ### Combine DIC tables ######################################
 
-images<-list.files("C:/Users/God/Downloads",pattern="*dics.png",full.names=TRUE)
+images<-list.files(pathfig,pattern="*dics.png",full.names=TRUE)
 ims<-do.call("c",lapply(images,function(x){
   im<-image_read(x)
   im<-image_border(im,"#FFFFFF","25x90")
@@ -1162,16 +1162,16 @@ ims<-do.call("c",lapply(images,function(x){
 res1<-image_append(c(ims[1],ims[2]),stack=TRUE)
 res2<-image_append(c(ims[3],ims[4]),stack=TRUE)  
 res<-image_append(c(res1,res2),stack=TRUE)
-image_write(res,"C:/Users/God/Downloads/mosquito_dic_tables.png")
-file.show("C:/Users/God/Downloads/mosquito_dic_tables.png")
-im<-image_read("C:/Users/God/Downloads/mosquito_dic_tables.png")
+image_write(res,file.path(pathfig,"mosquito_dic_tables.png"))
+file.show(file.path(pathfig,"mosquito_dic_tables.png"))
+im<-image_read(file.path(pathfig,"mosquito_dic_tables.png"))
 im<-image_scale(im[1],"x700")
-image_write(im,"C:/Users/God/Downloads/reduced_mosquito_dic_tables.png")
-#file.show("C:/Users/God/Downloads/reduced_mosquito_dic_tables.png")
+image_write(im,file.path(pathfig,"reduced_mosquito_dic_tables.png"))
+#file.show(file.path(pathfig,"reduced_mosquito_dic_tables.png"))
 
 ### Combine posteriors ############################################
 
-images<-list.files("C:/Users/God/Downloads",pattern="*posteriors.png",full.names=TRUE)
+images<-list.files(pathfig,pattern="*posteriors.png",full.names=TRUE)
 ims<-do.call("c",lapply(images,function(x){
   im<-image_read(x)
   im
@@ -1179,17 +1179,17 @@ ims<-do.call("c",lapply(images,function(x){
 #res1<-image_append(c(ims[1],ims[2]),stack=FALSE)
 #res2<-image_append(c(ims[3],ims[4]),stack=FALSE)  
 res<-image_append(ims,stack=FALSE)
-image_write(res,"C:/Users/God/Downloads/mosquito_posteriors_all.png")
-file.show("C:/Users/God/Downloads/mosquito_posteriors_all.png")
-im<-image_read("C:/Users/God/Downloads/mosquito_posteriors_all.png")
+image_write(res,file.path(pathfig,"mosquito_posteriors_all.png"))
+file.show(file.path(pathfig,"mosquito_posteriors_all.png"))
+im<-image_read(file.path(pathfig,"mosquito_posteriors_all.png"))
 im<-image_scale(im[1],"x700")
-image_write(im,"C:/Users/God/Downloads/reduced_mosquito_posteriors_all.png")
-#file.show("C:/Users/God/Downloads/reduced_mosquito_dic_tables.png")
+image_write(im,file.path(pathfig,"reduced_mosquito_posteriors_all.png"))
+#file.show(file.path(pathfig,"reduced_mosquito_dic_tables.png"))
 
 
 ### Combine animations ######################################
 
-images<-list.files("C:/Users/God/Downloads",pattern="*predicted_abundance.gif",full.names=TRUE)
+images<-list.files(pathfig,pattern="*predicted_abundance.gif",full.names=TRUE)
 ni<-nrow(image_info(image_read(images[1])))
 #images<-images[c(1,1,1,1)]
 ims<-lapply(images,function(x){
@@ -1208,13 +1208,13 @@ ims2<-lapply(1:ni,function(i){
 })
 #image_montage(ims,tile="2x2")
 animation<-image_animate(do.call("c",ims2),fps=2,optimize=FALSE)
-image_write(animation,"C:/Users/God/Downloads/mosquito_animations.gif")
-file.show("C:/Users/God/Downloads/mosquito_animations.gif")
+image_write(animation,file.path(pathfig,"mosquito_animations.gif"))
+file.show(file.path(pathfig,"mosquito_animations.gif"))
 rm(images,im,ni,ims,ims2,animation)
-im<-image_read("C:/Users/God/Downloads/mosquito_animations.gif")
+im<-image_read(file.path(pathfig,"mosquito_animations.gif"))
 im<-image_scale(im[1],"x700")
-image_write(im,"C:/Users/God/Downloads/reduced_mosquito_animations.gif")
-#file.show("C:/Users/God/Downloads/reduced_mosquito_animations.gif")
+image_write(im,file.path(pathfig,"reduced_mosquito_animations.gif"))
+#file.show(file.path(pathfig,"reduced_mosquito_animations.gif"))
 
 
 ### Study area map with lcc ################################################
@@ -1243,7 +1243,7 @@ ne<-st_make_valid(ne)
 ne<-ms_simplify(ne,keep=0.02)
 
 
-png("C:/Users/God/Downloads/location_map.png",width=8,height=8,units="in",res=200,pointsize=11)
+png(file.path(pathfig,"location_map.png"),width=8,height=8,units="in",res=200,pointsize=11)
 lim<-c(-85,40,-55,55)
 plot(st_geometry(ne),border=NA,col="grey90",axes=TRUE,bg="lightblue",xlim=lim[c(1,3)],ylim=lim[c(2,4)],cex.axis=2)
 plot(lakes10,col="lightskyblue",border=NA,add=TRUE)
@@ -1252,7 +1252,7 @@ plot(st_geometry(st_transform(st_as_sf(mappingzone),st_crs(ne))),col=gray(0,0.15
 mtext(side=3,line=0.25,text="Location of study area",font=2,cex=3,adj=0.025)
 box(col="grey60")
 dev.off()
-file.show("C:/Users/God/Downloads/location_map.png")
+file.show(file.path(pathfig,"location_map.png"))
 
 lccnames$used<-c("other","water","other","urban","wetland","wetland","wetland","wetland","agriculture","agriculture","shrub","forest")
 cols<-c(other="grey10",water="lightskyblue",urban="grey50",wetland="tan4",agriculture="khaki",shrub="yellowgreen",forest="forestgreen")
@@ -1261,7 +1261,7 @@ on<-c("agriculture","forest","shrub","urban","water","wetland","other")
 lccnames<-lccnames[order(lccnames$classn),]
 
 
-png("C:/Users/God/Downloads/lcc_map.png",width=7,height=4,units="in",res=300,pointsize=11)
+png(file.path(pathfig,"lcc_map.png"),width=7,height=4,units="in",res=300,pointsize=11)
 par(mar=c(0,0,0,8))
 xlim<-bbox(mappingzone)[1,]*1000
 ylim<-bbox(mappingzone)[2,]*1000
@@ -1278,15 +1278,15 @@ box(col="white")
 mtext(side=3,line=-1.75,text="Study area and land cover classes",adj=0.05,font=2,cex=1.25)
 north()
 dev.off()
-file.show("C:/Users/God/Downloads/lcc_map.png")
+file.show(file.path(pathfig,"lcc_map.png"))
 
-im1<-image_read("C:/Users/God/Downloads/location_map.png")
-im2<-image_read("C:/Users/God/Downloads/lcc_map.png")
+im1<-image_read(file.path(pathfig,"location_map.png"))
+im2<-image_read(file.path(pathfig,"lcc_map.png"))
 im<-image_composite(im2, image_scale(im1,"x565"),gravity="southeast",offset="+150+0")
-#im3<-image_read("C:/Users/God/Downloads/trap_year.png")
+#im3<-image_read(file.path(pathfig,"trap_year.png"))
 #im<-image_append(c(im,image_scale(im3,"x1350")),stack=TRUE)
-image_write(im,"C:/Users/God/Downloads/location.png")
-file.show("C:/Users/God/Downloads/location.png")
+image_write(im,file.path(pathfig,"location.png"))
+file.show(file.path(pathfig,"location.png"))
 
 
 
@@ -1296,7 +1296,7 @@ l<-split(ds[!ds$db%in%c("map1","map2"),],ds$year[!ds$db%in%c("map1","map2")])
 l[[length(l)+1]]<-l[[length(l)]]
 len<-length(l)
 
-png("C:/Users/God/Downloads/trap_year.png",width=7,height=3,units="in",res=300,pointsize=11)
+png(file.path(pathfig,"trap_year.png"),width=7,height=3,units="in",res=300,pointsize=11)
 par(mfrow=n2mfrow(length(l),asp=2),mar=c(0,0,0,0),oma=c(0,0,0,0))
 lapply(seq_along(l),function(i){
   x<-l[[i]][!duplicated(l[[i]]$longitude),]
@@ -1314,7 +1314,7 @@ lapply(seq_along(l),function(i){
   }
 })
 dev.off()
-file.show("C:/Users/God/Downloads/trap_year.png")
+file.show(file.path(pathfig,"trap_year.png"))
 
 
 ### Show no. of traps by week #####################
@@ -1327,7 +1327,7 @@ ee$nbtraps<-sapply(m,function(i){if(is.na(i)){0}else{nrow(l[[i]])}})
 ee<-ee[order(ee$year,ee$week),]
 nbtraps<-split(ee,ee$year)
 
-png("C:/Users/God/Downloads/trap_weeks.png",width=5,height=7,units="in",res=200,pointsize=11)
+png(file.path(pathfig,"trap_weeks.png"),width=5,height=7,units="in",res=200,pointsize=11)
 par(mfrow=c(length(nbtraps),1),mar=c(0.5,3,0,0),oma=c(3,0,0,0))
 lapply(nbtraps,function(i){
   b<-barplot(i$nbtraps,names.arg=if(identical(i,nbtraps[[length(nbtraps)]])){i$week}else{NULL},ylim=c(0,max(ee$nbtraps)),border=NA,col="forestgreen",xpd=FALSE,yaxt="n")
@@ -1338,7 +1338,7 @@ lapply(nbtraps,function(i){
   axis(2,mgp=c(2,0.5,0),tcl=-0.2,las=TRUE)
 })
 dev.off()
-file.show("C:/Users/God/Downloads/trap_weeks.png")
+file.show(file.path(pathfig,"trap_weeks.png"))
 
 
 ### Observed range of variables #####################
@@ -1353,7 +1353,7 @@ hlines<-function(h,col,...){
   })
 }
 
-png("C:/Users/God/Downloads/exvar_coverage.png",width=10,height=6,units="in",res=300,pointsize=11)
+png(file.path(pathfig,"exvar_coverage.png"),width=10,height=6,units="in",res=300,pointsize=11)
 lccs<-paste(unique(gsub("1000","",names(xs)[grep("1000",names(xs))])),collapse="|")
 lccs<-names(xs)[grep(lccs,names(xs))]
 lccs<-lccs[!grepl("CQ|marsh50",lccs)]
@@ -1382,7 +1382,7 @@ lapply(lccs,function(i){
   legend("topright",inset=c(0.05,0.1),legend=c("Observed","Predicted"),ncol=1,pch=22,pt.bg=adjustcolor(cols,0.5),col=cols,pt.cex=2,bty="n",pt.lwd=0.1,cex=0.7)
 })
 dev.off()
-file.show("C:/Users/God/Downloads/exvar_coverage.png")
+file.show(file.path(pathfig,"exvar_coverage.png"))
 
 
 ### check lp combinations for lcc vars
