@@ -21,7 +21,7 @@ pathfig<-"C:/Users/God/Documents/mosquitos/review/figures"
 
 ## RESULTS ##################################################
 
-load("SMG_model_outputs.RData")
+load("VEX_model_outputs.RData")
 
 ls()[sapply(ls(),function(i){
   obj<-paste0("\\b",i,"\\b")
@@ -56,7 +56,7 @@ getlabels<-function(x){
     forest1000="% of forests within 1 km", anom7="Mean temperature anomalies in previous 7 days (\u00B0C)", prcp7="Mean daily precipitations in previous 7 days (mm)", anom30="Mean temperature anomalies in previous 30 days (\u00B0C)", prcp30="Mean daily precipitations in previous 30 days (mm)", anom90="Mean temperature anomalies in previous 90 days (\u00B0C)", 
     prcp90="Mean daily precipitations in previous 90 days (mm)", urban50="% of urban within 50 m", urban1000="% of urban within 1 km")
   #print(v)
-  paste(v[match(x,names(v))],x,sep=" - ")
+  gsub("jul","doy",paste(v[match(x,names(v))],x,sep=" - "))
 }
 
 frange<-function(x,n=10){seq(min(x,na.rm=TRUE),max(x,na.rm=TRUE),length.out=n)}
@@ -95,7 +95,7 @@ resdics$Model<-paste0(substr(resdics$Model,1,3),formatC(as.integer(sapply(strspl
 resdics$Model[nrow(resdics)]<-paste0(resdics$Model[nrow(resdics)],"nonspatial")
 
 names(resdics)<-c("Variables","\u0394DIC","Model")
-resdics$Variables<-gsub("jul","ns(jul)",resdics$Variables)
+resdics$Variables<-gsub("jul","ns(doy)",resdics$Variables)
 resdics<-resdics[,c(3,1,2)]
 
 resdics %>%
@@ -464,11 +464,14 @@ lapply(names(pred),function(i){
     vleg<-round(identity(vobs),0)
     vpch<-rep(1,length(vobs))
   }
-  posx<-seq(par("usr")[1],par("usr")[2],length.out=length(vpch)+2)
-  posx<-posx[-c(1,length(posx))]-diff(posx)[1]*0.25
+  #posx<-seq(par("usr")[1],par("usr")[2],length.out=length(vpch)+2)
+  #posx<-posx[-c(1,length(posx))]-diff(posx)[1]*0.25
+  span<-par("usr")[2]-par("usr")[1]
+  posx<-seq(par("usr")[1]+(span*0.05),par("usr")[2]-(span*0.05),length.out=length(vpch))
+  posx<-posx-diff(posx)[1]*0.10
   posy<-rep(diff(par("usr")[c(3,4)])*0.075+par("usr")[3],length(vpch))
   points(posx,posy,cex=vcex,pch=vpch,col=gray(0.2,1))
-  text(posx,posy,label=vleg,adj=c(0.5,4),cex=1.5,xpd=TRUE)
+  text(posx,posy,label=vleg,adj=c(0.5,3.25),cex=1.5,xpd=TRUE)
   if(i=="sd.spatial.field"){
     lscale(w=5,lab="10 km",x=0.845,y=0.18,cex=1,height=0.02)
     north()
@@ -573,7 +576,7 @@ lapply(seq_along(lpr),function(i){
   text(st_coordinates(st_geometry(xxs)),label=xxs$sp,cex=0.7,col="grey10",adj=c(0.5,-1))
   #plot(log(lpr[[i]]),zlim=log(zlim),col=cols,asp=1,legend.only=TRUE)
   mtext(side=3,line=-1.6,text=paste(gsub("_","",spcode),yearpred,"  observations:",paste(format(as.Date(range(rd)),"%b-%d"),collapse=" to "),sep="  "),adj=0.025,cex=1.5)
-  mtext(side=4,line=-1,text="Number of mosquitos per trap (observed and predicted)",adj=0.5)
+  mtext(side=4,line=-1,text="Mean number of mosquitoes per trap (observed and predicted)",adj=0.5)
   xp<-xmin(lpr[[1]])+((xmax(lpr[[1]])-xmin(lpr[[1]]))*c(0.08,0.18))
   yp<-rep(ymin(lpr[[1]])+((ymax(lpr[[1]])-ymin(lpr[[1]]))*0.90),2)  
   points(xp,yp,pch=21,cex=2,bg=colobs[c(which.min(xxs$sp),which.max(xxs$sp))],col="grey10",lwd=0.4)
@@ -809,7 +812,7 @@ lapply(seq_along(lpr),function(i){
   text(st_coordinates(st_geometry(xxs)),label=xxs$sp,cex=0.7,col="grey10",adj=c(0.5,-1))
   #plot(log(lpr[[i]]),zlim=log(zlim),col=cols,asp=1,legend.only=TRUE)
   mtext(side=3,line=-2,text=paste(gsub("_","",spcode),yearpred,"  observations:",paste(format(as.Date(range(rd)),"%b-%d"),collapse=" to "),sep="  "),adj=0.15)
-  mtext(side=4,line=-1,text="Number of mosquitos per trap (observed and predicted)",adj=0.5)
+  mtext(side=4,line=-1,text="Mean number of mosquitoes per trap (observed and predicted)",adj=0.5)
   xp<-xmin(lpr[[1]])+((xmax(lpr[[1]])-xmin(lpr[[1]]))*c(0.58,0.65))
   yp<-rep(ymin(lpr[[1]])+((ymax(lpr[[1]])-ymin(lpr[[1]]))*0.97),2)  
   points(xp,yp,pch=21,cex=2,bg=colobs[c(which.min(xxs$sp),which.max(xxs$sp))],col="grey10",lwd=0.4)
@@ -923,7 +926,7 @@ lapply(seq_along(lpr),function(i){
   mtext(side=3,line=0,text=paste("predictions:",paste(format(xdate,"%b-%d"),collapse=" to "),sep="  "),adj=0.0)
   mtext(side=3,line=-1,text=paste("observations:",paste(format(as.Date(range(rd)),"%b-%d"),collapse=" to "),sep="  "),adj=0.0)
 
-  mtext(side=4,line=-1,text="Number of mosquitos per trap (observed and predicted)",adj=0.5,cex=0.7)
+  mtext(side=4,line=-1,text="Mean number of mosquitoes per trap (observed and predicted)",adj=0.5,cex=0.7)
   xp<-xmin(lpr[[1]])+((xmax(lpr[[1]])-xmin(lpr[[1]]))*c(0.85,0.85))
   yp<-ymin(lpr[[1]])+((ymax(lpr[[1]])-ymin(lpr[[1]]))*c(1.05,1.025)) 
   points(xp,yp,pch=21,cex=1,bg=colobs[c(which.min(xxs$sp),which.max(xxs$sp))],col="grey10",lwd=0.4,xpd=TRUE)
@@ -1052,7 +1055,7 @@ lm<-list.files(pattern="_model_outputs.RData")
 sps<-c("CPR_","CQP_","SMG_","VEX_")
 
 png(file.path(pathfig,"mosquito_counts.png"),width=10,height=8,units="in",res=200,pointsize=11)
-par(mfrow=c(2,2),mar=c(6,1,0,0),oma=c(3,2.75,0,0))
+par(mfrow=c(2,2),mar=c(6,1,0,0),oma=c(3,2.75,0.5,0))
 lapply(sps,function(i){
   counts<-xs@data[,grep(i,names(xs))]
   print(rev(sort(table(counts)))[1:5])
@@ -1062,16 +1065,19 @@ lapply(sps,function(i){
   divs<-c(divs[divs<max(counts)],max(counts))    
   brks<-log(divs+1)
   h<-hist(vals,breaks=brks,plot=FALSE)
-  b<-barplot(h$counts/1000,yaxt="n",space=0,col=adjustcolor("darkgreen",0.5),border="darkgreen")
+  b<-barplot(h$counts/1000,ylim=c(0,10),xaxt="n",yaxt="n",space=0,col=adjustcolor("darkgreen",0.5),border="darkgreen")
   at<-b[,1]
   lab<-paste0(round(exp(head(h$breaks,-1))-1+1,0)," - ",round(exp(tail(h$breaks,-1))-1,0))
   lab[1:2]<-c("0","1 - 5")
-  axis(1,at=at,labels=lab,mgp=c(2,0.5,0),tcl=-0.2,cex.axis=1.25,font=2,las=2)
-  axis(2,at=pretty(1.3*(h$counts/1000),7),las=2,mgp=c(2,0.5,0),tcl=-0.2,cex.axis=1.25,font=2)
-  mtext(side=3,line=-7,text=gsub("_","",i),font=2,cex=2,adj=0.9)
-  mtext(side=3,line=-9,text=paste(sum(counts),"ind."),font=2,cex=1.5,adj=0.9)
+  axis(1,at=at,labels=lab,mgp=c(2,0.5,0),tcl=-0.2,cex.axis=1.25,font=2,las=2,pos=c(0,0))
+  #aty<-pretty(1.3*(h$counts/1000),7)
+  aty<-pretty(c(0,10))
+  axis(2,at=aty,las=2,mgp=c(2,0.5,0),tcl=-0.2,cex.axis=1.25,font=2)
+  mtext(side=3,line=-9,text=gsub("_","",i),font=2,cex=2,adj=0.80)
+  mtext(side=3,line=-11,text=paste(sum(counts),"ind."),font=2,cex=1.5,adj=0.80)
   mtext(side=2,line=1,outer=TRUE,text="Frequency (x 1000)",xpd=TRUE,font=2,cex=1.5)
   mtext(side=1,line=1.5,outer=TRUE,text="Trap counts",xpd=TRUE,font=2,cex=1.5)
+  line(c(0,max(b[,1])),c(0,0))
 })
 dev.off()
 file.show(file.path(pathfig,"mosquito_counts.png"))
@@ -1089,7 +1095,7 @@ par(mfrow=c(1,1))
 
 ### Combine maps ##########################################
 
-images<-list.files(pathfig,pattern="*maps_all.png",full.names=TRUE)#[c(1,1,1,1)]
+images<-list.files(pathfig,pattern="*maps_all.png",full.names=TRUE)#[c(1,2,1,2)]
 ims<-do.call("c",lapply(images,function(x){
   im<-image_read(x)
   i<-image_info(im)
