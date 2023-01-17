@@ -399,7 +399,7 @@ names(legtitles)<-names(pred)
 
 png(file.path(pathfig,paste0(spcode,"maps_all.png")),width=16,height=8,units="in",res=300,pointsize=11)
 
-par(mfrow=n2mfrow(nlayers(pred),asp=1.5),mar=c(1,0.5,1,7),oma=c(0,0,0,0),bty="n")
+par(mfrow=n2mfrow(nlayers(pred),asp=1.5),mar=c(1.5,0.5,1,9),oma=c(0,0,0,0),bty="n")
 lapply(names(pred),function(i){
   print(i)
   if(i%in%names(meansd)){
@@ -424,12 +424,12 @@ lapply(names(pred),function(i){
     if(i %in% quantities[1:3] && TRUE){ # limits determined by CI if TRUE
       zlim<-range(values(pred2[[quantities[1:3]]]),na.rm=TRUE) 
     }
-    axis.args=list(at=frange(values(pred2[[i]])),labels=niceround(f(frange(values(pred2[[i]])))),cex.axis=1.2,lwd=0,tck=-0.2,mgp=c(3,0.3,0),lwd.ticks=1)
+    axis.args=list(at=frange(values(pred2[[i]])),labels=niceround(f(frange(values(pred2[[i]])))),cex.axis=1.5,lwd=0,tck=-0.2,mgp=c(3,0.3,0),lwd.ticks=1)
     legend.args=list(text=legtitles[i], side=4, font=2, line=-2.5, cex=1)
   }else{
     if(i%in%names(meansd)){
       zlim<-NULL
-      axis.args=list(at=sort(c(0,frange(values(pred2[[i]])))),labels=sort(round(c(0,f(frange(values(pred2[[i]])))),1)),cex.axis=1.2,lwd=0,tck=-0.2,mgp=c(3,0.3,0),lwd.ticks=1)
+      axis.args=list(at=sort(c(0,frange(values(pred2[[i]])))),labels=sort(round(c(0,f(frange(values(pred2[[i]])))),1)),cex.axis=1.5,lwd=0,tck=-0.2,mgp=c(3,0.3,0),lwd.ticks=1)
       legend.args=list(text=legtitles[i], side=4, font=2, line=-2.5, cex=1)
     }else{
       #zlim<-range(values(pred2[[quantities[1:3]]]),na.rm=TRUE)
@@ -468,7 +468,7 @@ lapply(names(pred),function(i){
   posx<-posx[-c(1,length(posx))]-diff(posx)[1]*0.25
   posy<-rep(diff(par("usr")[c(3,4)])*0.075+par("usr")[3],length(vpch))
   points(posx,posy,cex=vcex,pch=vpch,col=gray(0.2,1))
-  text(posx,posy,label=vleg,adj=c(0.5,4),cex=1.2,xpd=TRUE)
+  text(posx,posy,label=vleg,adj=c(0.5,4),cex=1.5,xpd=TRUE)
   if(i=="sd.spatial.field"){
     lscale(w=5,lab="10 km",x=0.845,y=0.18,cex=1,height=0.02)
     north()
@@ -1089,7 +1089,7 @@ par(mfrow=c(1,1))
 
 ### Combine maps ##########################################
 
-images<-list.files(pathfig,pattern="*maps_all.png",full.names=TRUE)
+images<-list.files(pathfig,pattern="*maps_all.png",full.names=TRUE)#[c(1,1,1,1)]
 ims<-do.call("c",lapply(images,function(x){
   im<-image_read(x)
   i<-image_info(im)
