@@ -21,7 +21,7 @@ pathfig<-"C:/Users/God/Documents/mosquitos/review/figures"
 
 ## RESULTS ##################################################
 
-load("VEX_model_outputs.RData")
+load("CPR_model_outputs.RData")
 
 ls()[sapply(ls(),function(i){
   obj<-paste0("\\b",i,"\\b")
@@ -92,7 +92,7 @@ resdics<-resdics[order(resdics$delta_dics),]
 resdics$Model<-row.names(resdics)
 resdics$Model[nrow(resdics)]<-resdics$Model[1]
 resdics$Model<-paste0(substr(resdics$Model,1,3),formatC(as.integer(sapply(strsplit(resdics$Model,"_"),"[",2)),width=2,flag="0",format="d"))
-resdics$Model[nrow(resdics)]<-paste0(resdics$Model[nrow(resdics)],"nonspatial")
+resdics$Model[nrow(resdics)]<-paste0(resdics$Model[nrow(resdics)],"ns")
 
 names(resdics)<-c("Variables","\u0394DIC","Model")
 resdics$Variables<-gsub("jul","ns(doy)",resdics$Variables)
@@ -1167,7 +1167,7 @@ ims<-do.call("c",lapply(images,function(x){
 }))
 res1<-image_append(c(ims[1],ims[2]),stack=TRUE)
 res2<-image_append(c(ims[3],ims[4]),stack=TRUE)  
-res<-image_append(c(res1,res2),stack=TRUE)
+res<-image_append(c(res1,res2),stack=FALSE)
 image_write(res,file.path(pathfig,"mosquito_dic_tables.png"))
 file.show(file.path(pathfig,"mosquito_dic_tables.png"))
 im<-image_read(file.path(pathfig,"mosquito_dic_tables.png"))
@@ -1221,6 +1221,33 @@ im<-image_read(file.path(pathfig,"mosquito_animations.gif"))
 im<-image_scale(im[1],"x700")
 image_write(im,file.path(pathfig,"reduced_mosquito_animations.gif"))
 #file.show(file.path(pathfig,"reduced_mosquito_animations.gif"))
+
+
+### Static animations ######################################
+
+images<-list.files(pathfig,pattern="*predicted_abundance.gif",full.names=TRUE)
+ni<-nrow(image_info(image_read(images[1])))
+#images<-images[c(1,1,1,1)]
+ims<-lapply(images,function(x){
+  im<-image_read(x)[11]
+  im<-image_border(im,"#FFFFFF","0x20")
+  im
+})
+  
+res1<-image_append(c(ims[[1]],ims[[2]]),stack=FALSE)
+res2<-image_append(c(ims[[3]],ims[[4]]),stack=FALSE)  
+res<-image_append(c(res1,res2),stack=TRUE)
+res
+
+image_write(res,file.path(pathfig,"mosquito_static.png"))
+file.show(file.path(pathfig,"mosquito_static.png"))
+im<-image_read(file.path(pathfig,"mosquito_static.png"))
+im<-image_scale(im[1],"x700")
+image_write(im,file.path(pathfig,"reduced_mosquito_static.png"))
+#file.show(file.path(pathfig,"reduced_mosquito_animations.gif"))
+
+
+
 
 
 ### Study area map with lcc ################################################
