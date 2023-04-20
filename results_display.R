@@ -636,6 +636,53 @@ file.show(file.path(pathfig,paste0(paste0(spcode,yearpred),"predicted_abundance.
 
 
 
+### Add titles to animations for SM
+
+splist<-list(
+  CPR="CPR (Culex pipiens-restuans group)", 
+  CQP="CQP (Coquillettidia perturbans)", 
+  SMG="SMG (Ochlerotatus stimulans-fitchii-riparius group)",
+  VEX="VEX (Aedes vexans)"
+)
+  
+titrespcode<-"Fig. Sfignum. Predicted mosquito counts across the 2003 season in the Greater Montréal area, Quebec, Canada for spcode. Predicted counts are derived from a Bayesian negative binomial spatial model with date, weather and land-cover characteristics as explanatory variables. The range of the colour scale is determined by the lowest count predicted and by the highest observed or predicted count. The tick marks show the minimum and maximum predicted counts for each map. Observations shown are within three days of the date used for a given map. Counts of zero are shown using the colour white. For each date, current weather variables were used when generating predictions. Since land-cover variables were constant, variations in predicted counts are entirely due to the weather variables and the spatial component. The following three panels show variations in mean temperature, anomaly and precipitation over the previous two days across the whole study region (mean of tmean2, anom2 and prcp2). The dashed lines show the mean value for the temperature and the anomaly and the 0 mm for the precipitations. Finally, the bottom panel shows the observed counts on a log scale across the whole 2003 season."
+
+
+for(i in seq_along(splist)){
+  titre<-gsub("spcode",splist[[i]],titrespcode)
+  titre<-gsub("fignum",i,titre)
+  titre<-paste(strwrap(titre),collapse="\n")
+
+
+  ims<-list.files(pathfig,full=TRUE,pattern="_abundance.gif")
+  ims<-ims[grep(names(splist)[i],ims)]
+  im<-image_read(ims)#[1:2]
+  h<-image_info(im)$height[1]
+  im<-image_border(im,"white","x500")
+
+  im<-image_annotate(im,titre,
+                     size=30,
+                     gravity="northwest",
+                     location=paste0("+20+",h+550)
+                     )
+
+  #im<-image_draw(im)
+  #text(0,0,titre,adj=c(0,1))
+  #dev.off()
+
+  im<-image_trim(im)
+  im<-image_scale(im,"x2000")
+  im<-image_border(im,"white","20x20")
+
+  writepath<-gsub(".gif","_title.gif",ims)
+  writepath<-file.path(dirname(writepath),paste0(paste("Additional file",i),".gif"))
+  image_write(im,writepath)
+  #file.show(writepath)
+}
+
+
+
+
 #### check weather across season ########################################
 
 temp<-lapply(xsmap2,function(i){
